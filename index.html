@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101b2a">
+  <title>NeuroTrace | Handwriting Signal Analysis</title>
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+  <style>
+    :root { color-scheme: dark; --bg:#0b1420; --panel:#111e2c; --line:#243547; --muted:#91a4b7; --text:#edf5fb; --cyan:#5ee1d0; --blue:#78aaff; --red:#ff8b84; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:radial-gradient(ellipse at 80% -10%, #1b3444 0, transparent 42%),var(--bg); color:var(--text); font:15px/1.5 Inter, ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+    .wrap { width:min(1120px,calc(100% - 40px)); margin:0 auto; padding:36px 0 52px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:30px; }
+    .brand { display:flex; align-items:center; gap:13px; }
+    .mark { width:42px;height:42px;border:1px solid #34605f;border-radius:13px;display:grid;place-items:center;color:var(--cyan);background:#122b31;font-weight:800;font-size:20px; }
+    h1,h2,p { margin:0; } h1 {font-size:18px;letter-spacing:.015em;} .eyebrow { color:var(--muted);font-size:12px;letter-spacing:.1em;text-transform:uppercase; }
+    .badge { border:1px solid var(--line);border-radius:999px;padding:7px 11px;color:#b8c8d7;font-size:12px;white-space:nowrap; }
+    .intro { margin-bottom:22px; } .intro h2 { font-size:clamp(25px,4vw,34px); letter-spacing:-.03em;margin-bottom:7px; } .intro p {color:var(--muted);max-width:700px;}
+    .grid { display:grid;grid-template-columns:minmax(0,1.55fr) minmax(280px,.85fr);gap:18px;align-items:stretch; }
+    .card { background:linear-gradient(145deg,rgba(21,36,52,.97),rgba(15,27,41,.97));border:1px solid var(--line);border-radius:18px;overflow:hidden; }
+    .card-head { padding:19px 21px 15px;display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid rgba(36,53,71,.7); }
+    .card-head h3 { font-size:14px; } .card-head span { font-size:12px;color:var(--muted); }
+    .canvas-area { padding:16px; } canvas { width:100%;height:330px;display:block;background:#0b1724;border:1px solid #203348;border-radius:12px;touch-action:none;cursor:crosshair; }
+    .hint { display:flex;align-items:center;gap:8px;padding:0 4px 2px;color:var(--muted);font-size:12px; } .hint i {width:7px;height:7px;border-radius:50%;background:var(--cyan);display:inline-block;}
+    .actions {display:flex;gap:10px;padding:14px 16px 17px;border-top:1px solid rgba(36,53,71,.7);}
+    button {border:0;border-radius:10px;padding:11px 16px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:filter .15s,transform .15s;} button:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px);} button:disabled{opacity:.55;cursor:wait;}
+    .primary {background:var(--cyan);color:#082021;flex:1;} .secondary {background:#1c2d40;color:#d7e4ef;border:1px solid #30475b;}
+    .result {padding:22px;display:flex;flex-direction:column;min-height:100%;}
+    .result-label {color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.11em;margin-bottom:12px;}
+    .result-state {font-size:23px;line-height:1.2;font-weight:720;letter-spacing:-.02em;margin-bottom:9px;}
+    .result-copy {color:var(--muted);font-size:13px;min-height:40px;}
+    .meter {margin:23px 0 9px;height:7px;border-radius:6px;background:#26394a;overflow:hidden;} .meter > div {height:100%;width:0;background:linear-gradient(90deg,var(--cyan),var(--blue));border-radius:inherit;transition:width .35s ease;}
+    .confidence {display:flex;justify-content:space-between;color:#c0cedb;font-size:12px;} .confidence strong {font-size:15px;color:var(--text);}
+    .divider {height:1px;background:var(--line);margin:20px 0 14px;}
+    .status-row {display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:12px;margin:7px 0;} .status-row b {font-weight:500;color:#d4e1ed;text-align:right;}
+    .notice {margin-top:18px;padding:13px 15px;border:1px solid #344352;border-radius:12px;color:#aab9c7;font-size:12px;background:rgba(18,30,43,.62);}
+    .notice strong {color:#d2dfeb;}
+    #liveStatus {min-height:19px;color:#9eb2c5;font-size:12px;padding:0 4px 9px;}
+    .error {color:#ffaaa4!important;} .healthy {color:var(--cyan);} .detected {color:var(--red);}
+    @media(max-width:760px){.wrap{width:min(100% - 24px,600px);padding-top:22px}.grid{grid-template-columns:1fr}header{margin-bottom:22px}.result{min-height:unset}canvas{height:290px}.badge{display:none}}
+    @media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <div class="brand"><div class="mark" aria-hidden="true">N</div><div><h1>NEUROTRACE</h1><div class="eyebrow">Motor signal analysis</div></div></div>
+      <div class="badge">On-device inference · ONNX Runtime Web</div>
+    </header>
+    <section class="intro">
+      <h2>Handwriting signal analysis</h2>
+      <p>Draw a continuous spiral or free-form line in the canvas, then analyze its motion signal with the NeuroTrace V5 model.</p>
+    </section>
+    <div class="grid">
+      <section class="card" aria-labelledby="drawTitle">
+        <div class="card-head"><h3 id="drawTitle">Drawing canvas</h3><span>Use a stylus, touch, or mouse</span></div>
+        <div class="canvas-area">
+          <div id="liveStatus" role="status" aria-live="polite">Draw a line to begin. Your stroke stays in this browser.</div>
+          <canvas id="drawCanvas" aria-label="Drawing area. Draw a continuous line here."></canvas>
+          <div class="hint"><i></i><span>Keep your movement continuous for a useful signal.</span></div>
+        </div>
+        <div class="actions"><button id="analyzeBtn" class="primary" disabled>Analyze signal</button><button id="clearBtn" class="secondary" type="button">Clear canvas</button></div>
+      </section>
+      <section class="card" aria-labelledby="resultTitle">
+        <div class="card-head"><h3 id="resultTitle">Model result</h3><span>Decision threshold 0.50</span></div>
+        <div class="result">
+          <div class="result-label">Classification</div>
+          <div id="classification" class="result-state">Waiting for a drawing</div>
+          <p id="resultCopy" class="result-copy">Draw a stroke and select Analyze signal to run the model.</p>
+          <div class="meter" aria-hidden="true"><div id="meterFill"></div></div>
+          <div class="confidence"><span>Model probability</span><strong id="probability">—</strong></div>
+          <div class="divider"></div>
+          <div class="status-row"><span>Sequence length</span><b>256 time-steps</b></div>
+          <div class="status-row"><span>Input channels</span><b>x · y · pressure · velocity · dt</b></div>
+          <div class="status-row"><span>Runtime</span><b id="runtimeStatus">Loading ONNX Runtime…</b></div>
+        </div>
+      </section>
+    </div>
+    <aside class="notice"><strong>Important:</strong> This research prototype is not a medical device and does not provide a diagnosis. Do not use its output to make health decisions. If you have concerns, consult a qualified healthcare professional.</aside>
+  </main>
+<script>
+(() => {
+  'use strict';
+  const SEQ_LEN = 256;
+  const CHANNELS = ['x', 'y', 'pressure', 'velocity', 'dt'];
+  const THRESHOLD = 0.50;
+  const canvas = document.getElementById('drawCanvas');
+  const ctx = canvas.getContext('2d');
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const liveStatus = document.getElementById('liveStatus');
+  const runtimeStatus = document.getElementById('runtimeStatus');
+  const classification = document.getElementById('classification');
+  const resultCopy = document.getElementById('resultCopy');
+  const probability = document.getElementById('probability');
+  const meterFill = document.getElementById('meterFill');
+  let points = [];
+  let drawing = false;
+  let sessionPromise;
+  let scalerPromise;
+
+  function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const snapshot = points;
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 3.2; ctx.strokeStyle = '#5ee1d0';
+    if (snapshot.length > 1) {
+      ctx.beginPath(); ctx.moveTo(snapshot[0].x, snapshot[0].y);
+      for (let i = 1; i < snapshot.length; i++) ctx.lineTo(snapshot[i].x, snapshot[i].y);
+      ctx.stroke();
+    }
+  }
+  function clearCanvas() {
+    points = []; drawing = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    analyzeBtn.disabled = true;
+    liveStatus.textContent = 'Draw a line to begin. Your stroke stays in this browser.';
+    classification.textContent = 'Waiting for a drawing'; classification.className = 'result-state';
+    resultCopy.textContent = 'Draw a stroke and select Analyze signal to run the model.';
+    probability.textContent = '—'; meterFill.style.width = '0%';
+  }
+  function canvasPosition(e) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+  function addPoint(e) {
+    const pos = canvasPosition(e);
+    const now = Number.isFinite(e.timeStamp) ? e.timeStamp : performance.now();
+    const prior = points[points.length - 1];
+    let dt = prior ? Math.max((now - prior.t) / 1000, 0.001) : 0.001;
+    let velocity = prior ? Math.hypot(pos.x - prior.x, pos.y - prior.y) / dt : 0;
+    // Normalize velocity to a practical drawing-speed range; pointer dimensions form a normalized radius proxy.
+    const vNorm = clamp(velocity / 1500, 0, 1);
+    const rNorm = clamp(((Number(e.width) || 1) + (Number(e.height) || 1)) / 200, 0, 1);
+    const nativePressure = Number(e.pressure);
+    const pressure = (e.pointerType === 'mouse' || nativePressure === 0)
+      ? clamp(0.65 * (1.0 - 0.35 * vNorm) + 0.15 * rNorm, 0, 1)
+      : clamp(Number.isFinite(nativePressure) ? nativePressure : 0.5, 0, 1);
+    const point = { x: pos.x, y: pos.y, pressure, velocity, dt, t: now };
+    if (prior) {
+      ctx.beginPath(); ctx.moveTo(prior.x, prior.y); ctx.lineTo(point.x, point.y); ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.arc(point.x, point.y, ctx.lineWidth / 2, 0, Math.PI * 2); ctx.fillStyle = ctx.strokeStyle; ctx.fill();
+    }
+    points.push(point);
+    analyzeBtn.disabled = points.length < 2;
+    liveStatus.textContent = `${points.length} signal samples captured.`;
+  }
+  canvas.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (drawing) return;
+    drawing = true; canvas.setPointerCapture(e.pointerId); addPoint(e);
+  });
+  canvas.addEventListener('pointermove', e => { if (drawing) { e.preventDefault(); addPoint(e); } });
+  function finishStroke(e) {
+    if (!drawing) return;
+    if (e && e.pointerId !== undefined && canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+    drawing = false;
+    if (points.length >= 2) liveStatus.textContent = `${points.length} samples ready. Select Analyze signal when you are ready.`;
+  }
+  canvas.addEventListener('pointerup', finishStroke);
+  canvas.addEventListener('pointercancel', finishStroke);
+  canvas.addEventListener('lostpointercapture', () => { drawing = false; });
+  clearBtn.addEventListener('click', clearCanvas);
+  window.addEventListener('resize', resizeCanvas);
+
+  function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+  function resample(source, count) {
+    if (!source.length) throw new Error('Draw a stroke before analyzing.');
+    if (source.length === 1) return Array.from({ length: count }, () => ({ ...source[0] }));
+    const output = [];
+    for (let i = 0; i < count; i++) {
+      const position = i * (source.length - 1) / (count - 1);
+      const left = Math.floor(position), right = Math.min(left + 1, source.length - 1), alpha = position - left;
+      const a = source[left], b = source[right];
+      const item = {};
+      for (const key of CHANNELS) item[key] = a[key] + (b[key] - a[key]) * alpha;
+      output.push(item);
+    }
+    return output;
+  }
+  function findChannelStats(config, statName) {
+    const statAliases = statName === 'mean' ? ['mean', 'mean_', 'means'] : ['scale', 'scale_', 'std', 'std_', 'scales'];
+    const candidates = [config, config.scaler, config.standard_scaler, config.standardScaler, config.preprocessing, config.channels, config.features].filter(Boolean);
+    for (const obj of candidates) {
+      for (const key of statAliases) {
+        if (obj[key] !== undefined) {
+          const value = obj[key];
+          if (Array.isArray(value) && value.length >= CHANNELS.length) return CHANNELS.map((_, i) => Number(value[i]));
+          if (value && typeof value === 'object') {
+            const vals = CHANNELS.map(name => Number(value[name]));
+            if (vals.every(Number.isFinite)) return vals;
+          }
+        }
+      }
+    }
+    // Also support channel-keyed JSON: {x:{mean,scale}, ...}.
+    const vals = CHANNELS.map(name => {
+      const channel = config[name] || (config.channels && config.channels[name]);
+      return channel && Number(channel[statName]);
+    });
+    if (vals.every(Number.isFinite)) return vals;
+    throw new Error(`Could not find ${statName} values for channels: ${CHANNELS.join(', ')}.`);
+  }
+  async function loadScaler() {
+    if (!scalerPromise) scalerPromise = fetch('scaler_config_v5.json', { cache: 'no-store' }).then(async response => {
+      if (!response.ok) throw new Error(`Could not load scaler_config_v5.json (${response.status}).`);
+      const config = await response.json();
+      const mean = findChannelStats(config, 'mean');
+      const scale = findChannelStats(config, 'scale');
+      if ([...mean, ...scale].some(v => !Number.isFinite(v)) || scale.some(v => v === 0)) throw new Error('Scaler configuration contains invalid statistics.');
+      return { mean, scale };
+    });
+    return scalerPromise;
+  }
+  async function loadSession() {
+    if (!window.ort) throw new Error('ONNX Runtime Web did not load. Check your network connection.');
+    if (!sessionPromise) {
+      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
+      sessionPromise = ort.InferenceSession.create('neurotrace_v5.onnx', { executionProviders: ['wasm'] });
+    }
+    return sessionPromise;
+  }
+  function createTensor(sequence, scaler) {
+    // ONNX input layout is [batch, channel, time].
+    const data = new Float32Array(CHANNELS.length * SEQ_LEN);
+    for (let c = 0; c < CHANNELS.length; c++) {
+      for (let t = 0; t < SEQ_LEN; t++) {
+        const standardized = (sequence[t][CHANNELS[c]] - scaler.mean[c]) / scaler.scale[c];
+        data[c * SEQ_LEN + t] = standardized;
+      }
+    }
+    return new ort.Tensor('float32', data, [1, CHANNELS.length, SEQ_LEN]);
+  }
+  function outputProbability(output) {
+    const values = output && output.data ? Array.from(output.data) : [];
+    if (!values.length || !Number.isFinite(Number(values[0]))) throw new Error('The model returned an empty or invalid output.');
+    // A one-value output is treated as a logit unless already within [0, 1]. For a two-class output, use class 1.
+    let value = Number(values.length > 1 ? values[1] : values[0]);
+    if (values.length === 1 && (value < 0 || value > 1)) value = 1 / (1 + Math.exp(-value));
+    if (values.length > 1 && (value < 0 || value > 1)) {
+      const max = Math.max(...values.map(Number));
+      const exp = values.map(v => Math.exp(Number(v) - max));
+      value = exp[1] / exp.reduce((sum, v) => sum + v, 0);
+    }
+    if (!Number.isFinite(value)) throw new Error('Could not interpret the model output.');
+    return clamp(value, 0, 1);
+  }
+  analyzeBtn.addEventListener('click', async () => {
+    if (drawing || points.length < 2) return;
+    analyzeBtn.disabled = true; analyzeBtn.textContent = 'Analyzing…';
+    liveStatus.textContent = 'Preparing signal and loading model…';
+    classification.textContent = 'Analysis in progress'; classification.className = 'result-state';
+    resultCopy.textContent = 'Processing the 256-step motion sequence locally in your browser.';
+    try {
+      const [session, scaler] = await Promise.all([loadSession(), loadScaler()]);
+      const sequence = resample(points, SEQ_LEN);
+      const inputName = session.inputNames[0];
+      if (!inputName) throw new Error('The ONNX model does not declare an input.');
+      const outputs = await session.run({ [inputName]: createTensor(sequence, scaler) });
+      const outputName = session.outputNames[0];
+      const score = outputProbability(outputs[outputName]);
+      const isPositive = score >= THRESHOLD;
+      classification.textContent = isPositive ? "Parkinson's Disease Detected" : 'Healthy Control';
+      classification.className = `result-state ${isPositive ? 'detected' : 'healthy'}`;
+      resultCopy.textContent = isPositive ? 'The model score is at or above the configured decision threshold.' : 'The model score is below the configured decision threshold.';
+      probability.textContent = `${(score * 100).toFixed(1)}%`;
+      meterFill.style.width = `${score * 100}%`;
+      liveStatus.textContent = 'Analysis complete. Signal processing was performed in this browser.';
+    } catch (error) {
+      console.error('NeuroTrace inference failed:', error);
+      classification.textContent = 'Unable to analyze'; classification.className = 'result-state error';
+      resultCopy.textContent = error && error.message ? error.message : 'An unexpected error occurred while running inference.';
+      liveStatus.textContent = 'Analysis failed. Check that the model and scaler files are available.';
+      liveStatus.classList.add('error');
+    } finally {
+      analyzeBtn.textContent = 'Analyze signal'; analyzeBtn.disabled = points.length < 2;
+    }
+  });
+  loadSession().then(() => { runtimeStatus.textContent = 'ONNX Runtime ready'; }).catch(error => {
+    runtimeStatus.textContent = 'Model not loaded';
+    console.warn('Model load deferred or failed:', error);
+  });
+  resizeCanvas();
+})();
+</script>
+</body>
+</html>
