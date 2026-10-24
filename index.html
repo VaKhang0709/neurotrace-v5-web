@@ -213,7 +213,12 @@
       const mean = findChannelStats(config, 'mean');
       const scale = findChannelStats(config, 'scale');
       if ([...mean, ...scale].some(v => !Number.isFinite(v)) || scale.some(v => v === 0)) throw new Error('Scaler configuration contains invalid statistics.');
-      return { mean, scale };
+      return {
+        mean,
+        scale,
+        threshold: Number.isFinite(Number(config.classification_threshold)) ? Number(config.classification_threshold) : THRESHOLD,
+        outputActivation: String(config.output_activation_in_onnx || '')
+      };
     });
     return scalerPromise;
   }
@@ -236,16 +241,21 @@
     }
     return new ort.Tensor('float32', data, [1, CHANNELS.length, SEQ_LEN]);
   }
-  function outputProbability(output) {
-    const values = output && output.data ? Array.from(output.data) : [];
-    if (!values.length || !Number.isFinite(Number(values[0]))) throw new Error('The model returned an empty or invalid output.');
-    // A one-value output is treated as a logit unless already within [0, 1]. For a two-class output, use class 1.
-    let value = Number(values.length > 1 ? values[1] : values[0]);
-    if (values.length === 1 && (value < 0 || value > 1)) value = 1 / (1 + Math.exp(-value));
-    if (values.length > 1 && (value < 0 || value > 1)) {
-      const max = Math.max(...values.map(Number));
-      const exp = values.map(v => Math.exp(Number(v) - max));
-      value = exp[1] / exp.reduce((sum, v) => sum + v, 0);
+  function outputProbability(output, activation) {
+    const values = output && output.data ? Array.from(output.data, Number) : [];
+    if (!values.length || values.some(value => !Number.isFinite(value))) throw new Error('The model returned an empty or invalid output.');
+    const rawLogits = activation.includes('raw_logits');
+    let value;
+    if (values.length === 1) {
+      value = (rawLogits || values[0] < 0 || values[0] > 1)
+        ? 1 / (1 + Math.exp(-values[0]))
+        : values[0];
+    } else if (rawLogits || values.some(item => item < 0 || item > 1)) {
+      const max = Math.max(...values);
+      const exp = values.map(item => Math.exp(item - max));
+      value = exp[1] / exp.reduce((sum, item) => sum + item, 0);
+    } else {
+      value = values[1];
     }
     if (!Number.isFinite(value)) throw new Error('Could not interpret the model output.');
     return clamp(value, 0, 1);
@@ -263,8 +273,8 @@
       if (!inputName) throw new Error('The ONNX model does not declare an input.');
       const outputs = await session.run({ [inputName]: createTensor(sequence, scaler) });
       const outputName = session.outputNames[0];
-      const score = outputProbability(outputs[outputName]);
-      const isPositive = score >= THRESHOLD;
+      const score = outputProbability(outputs[outputName], scaler.outputActivation);
+      const isPositive = score >= scaler.threshold;
       classification.textContent = isPositive ? "Parkinson's Disease Detected" : 'Healthy Control';
       classification.className = `result-state ${isPositive ? 'detected' : 'healthy'}`;
       resultCopy.textContent = isPositive ? 'The model score is at or above the configured decision threshold.' : 'The model score is below the configured decision threshold.';
