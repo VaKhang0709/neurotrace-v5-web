@@ -199,32 +199,65 @@
     });
   }
   function prepareTrajectory(source, pointerType) {
+    // Preserve mouse de-jittering, then normalize each axis over the smoothed stroke bounds.
     const smoothed = pointerType === 'mouse' ? smoothMouseCoordinates(source) : source;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const point of smoothed) {
+      minX = Math.min(minX, point.x); maxX = Math.max(maxX, point.x);
+      minY = Math.min(minY, point.y); maxY = Math.max(maxY, point.y);
+    }
+    const xRange = maxX - minX + 1e-6;
+    const yRange = maxY - minY + 1e-6;
+    const timeSec = source.map(point => point.t / 1000.0);
+
     return source.map((point, index) => {
-      const dt = index === 0
-        ? (source.length > 1 ? Math.max((source[1].t - point.t) / 1000, 0.001) : 0.001)
-        : Math.max((point.t - source[index - 1].t) / 1000, 0.001);
-      const dx = index === 0 ? 0 : smoothed[index].x - smoothed[index - 1].x;
-      const dy = index === 0 ? 0 : smoothed[index].y - smoothed[index - 1].y;
-      const velocity = Math.hypot(dx, dy) / dt;
+      const x = (smoothed[index].x - minX) / xRange;
+      const y = (smoothed[index].y - minY) / yRange;
+      const dt = index === 0 ? 0 : timeSec[index] - timeSec[index - 1];
+      const prevX = index === 0 ? x : (smoothed[index - 1].x - minX) / xRange;
+      const prevY = index === 0 ? y : (smoothed[index - 1].y - minY) / yRange;
+      const dx = index === 0 ? 0 : x - prevX;
+      const dy = index === 0 ? 0 : y - prevY;
+      const velocity = Math.hypot(dx, dy) / (dt + 1e-6);
       const vNorm = clamp(velocity / 1500, 0, 1);
       const pressure = (pointerType === 'mouse' || point.nativePressure === 0)
         ? clamp(0.65 * (1.0 - 0.35 * vNorm) + 0.15 * point.radiusNorm, 0, 1)
         : clamp(point.nativePressure, 0, 1);
-      return { x: smoothed[index].x, y: smoothed[index].y, pressure, velocity, dt };
+      return { x, y, pressure, velocity, dt, t: timeSec[index] };
     });
   }
   function resample(source, count) {
     if (!source.length) throw new Error('Draw a stroke before analyzing.');
     if (source.length === 1) return Array.from({ length: count }, () => ({ ...source[0] }));
     const output = [];
+    const startTime = source[0].t;
+    const endTime = source[source.length - 1].t;
+    const duration = endTime - startTime;
+    let right = 1;
     for (let i = 0; i < count; i++) {
-      const position = i * (source.length - 1) / (count - 1);
-      const left = Math.floor(position), right = Math.min(left + 1, source.length - 1), alpha = position - left;
-      const a = source[left], b = source[right];
-      const item = {};
-      for (const key of CHANNELS) item[key] = a[key] + (b[key] - a[key]) * alpha;
-      output.push(item);
+      // Uniform target times span t0..tEnd; degenerate timestamps fall back to uniform sample positions.
+      const targetTime = duration > 0
+        ? startTime + duration * i / (count - 1)
+        : startTime;
+      while (duration > 0 && right < source.length - 1 && source[right].t < targetTime) right++;
+      let leftIndex, rightIndex, alpha;
+      if (duration <= 0) {
+        const position = i * (source.length - 1) / (count - 1);
+        leftIndex = Math.floor(position);
+        rightIndex = Math.min(leftIndex + 1, source.length - 1);
+        alpha = position - leftIndex;
+      } else if (targetTime <= startTime) {
+        leftIndex = rightIndex = 0; alpha = 0;
+      } else if (targetTime >= endTime) {
+        leftIndex = rightIndex = source.length - 1; alpha = 0;
+      } else {
+        leftIndex = right - 1; rightIndex = right;
+        const span = source[rightIndex].t - source[leftIndex].t;
+        alpha = span > 0 ? (targetTime - source[leftIndex].t) / span : 0;
+      }
+      const a = source[leftIndex], b = source[rightIndex], sample = {};
+      for (const key of CHANNELS) sample[key] = a[key] + (b[key] - a[key]) * alpha;
+      output.push(sample);
     }
     return output;
   }
@@ -276,15 +309,18 @@
     return sessionPromise;
   }
   function createTensor(sequence, scaler) {
-    // ONNX input layout is [batch, channel, time].
-    const data = new Float32Array(CHANNELS.length * SEQ_LEN);
-    for (let c = 0; c < CHANNELS.length; c++) {
-      for (let t = 0; t < SEQ_LEN; t++) {
-        const standardized = (sequence[t][CHANNELS[c]] - scaler.mean[c]) / scaler.scale[c];
-        data[c * SEQ_LEN + t] = standardized;
+    // Channel-first ONNX layout [1, 5, 256]: X[0..255], Y[256..511],
+    // pressure[512..767], velocity[768..1023], then dt[1024..1279].
+    const flatFloat32Array = new Float32Array(1 * CHANNELS.length * SEQ_LEN);
+    for (let channelIndex = 0; channelIndex < CHANNELS.length; channelIndex++) {
+      const channelName = CHANNELS[channelIndex];
+      const channelOffset = channelIndex * SEQ_LEN;
+      for (let timeIndex = 0; timeIndex < SEQ_LEN; timeIndex++) {
+        const standardized = (sequence[timeIndex][channelName] - scaler.mean[channelIndex]) / scaler.scale[channelIndex];
+        flatFloat32Array[channelOffset + timeIndex] = standardized;
       }
     }
-    return new ort.Tensor('float32', data, [1, CHANNELS.length, SEQ_LEN]);
+    return new ort.Tensor('float32', flatFloat32Array, [1, 5, 256]);
   }
   function outputProbability(output, activation) {
     const values = output && output.data ? Array.from(output.data, Number) : [];
