@@ -23,6 +23,10 @@
     .card-head h3 { font-size:14px; } .card-head span { font-size:12px;color:var(--muted); }
     .canvas-area { padding:16px; } canvas { width:100%;height:330px;display:block;background:#0b1724;border:1px solid #203348;border-radius:12px;touch-action:none;cursor:crosshair; }
     .hint { display:flex;align-items:center;gap:8px;padding:0 4px 2px;color:var(--muted);font-size:12px; } .hint i {width:7px;height:7px;border-radius:50%;background:var(--cyan);display:inline-block;}
+    .card-head .device-badge { display:inline-flex;align-items:center;gap:7px;border:1px solid #345363;border-radius:999px;padding:5px 10px;color:#c8e8e5;background:#122a32;font-size:11px;font-weight:650;white-space:nowrap; }
+    .device-badge::before { content:"";width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px #5ee1d080; }
+    .device-notice { margin:0 0 12px;padding:9px 11px;border:1px solid #355b5b;border-radius:9px;color:#b8e7df;background:#102b2a;font-size:12px; }
+    .device-notice[hidden] { display:none; }
     .actions {display:flex;gap:10px;padding:14px 16px 17px;border-top:1px solid rgba(36,53,71,.7);}
     button {border:0;border-radius:10px;padding:11px 16px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:filter .15s,transform .15s;} button:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px);} button:disabled{opacity:.55;cursor:wait;}
     .primary {background:var(--cyan);color:#082021;flex:1;} .secondary {background:#1c2d40;color:#d7e4ef;border:1px solid #30475b;}
@@ -54,9 +58,10 @@
     </section>
     <div class="grid">
       <section class="card" aria-labelledby="drawTitle">
-        <div class="card-head"><h3 id="drawTitle">Drawing canvas</h3><span>Use a stylus, touch, or mouse</span></div>
+        <div class="card-head"><h3 id="drawTitle">Drawing canvas</h3><span id="inputDeviceBadge" class="device-badge" aria-live="polite">Input Device: Not detected</span></div>
         <div class="canvas-area">
           <div id="liveStatus" role="status" aria-live="polite">Draw a line to begin. Your stroke stays in this browser.</div>
+          <p id="deviceNotice" class="device-notice" role="status" aria-live="polite" hidden>Mouse mode detected: Kinetic smoothing applied to reduce hardware sensor noise.</p>
           <canvas id="drawCanvas" aria-label="Drawing area. Draw a continuous line here."></canvas>
           <div class="hint"><i></i><span>Keep your movement continuous for a useful signal.</span></div>
         </div>
@@ -90,6 +95,8 @@
   const analyzeBtn = document.getElementById('analyzeBtn');
   const clearBtn = document.getElementById('clearBtn');
   const liveStatus = document.getElementById('liveStatus');
+  const inputDeviceBadge = document.getElementById('inputDeviceBadge');
+  const deviceNotice = document.getElementById('deviceNotice');
   const runtimeStatus = document.getElementById('runtimeStatus');
   const classification = document.getElementById('classification');
   const resultCopy = document.getElementById('resultCopy');
@@ -97,6 +104,7 @@
   const meterFill = document.getElementById('meterFill');
   let points = [];
   let drawing = false;
+  let currentPointerType = null;
   let sessionPromise;
   let scalerPromise;
 
@@ -114,11 +122,21 @@
       ctx.stroke();
     }
   }
+  function updateDeviceIndicator(pointerType) {
+    currentPointerType = pointerType || 'unknown';
+    const labels = { mouse: 'Mouse (Smoothed)', touch: 'Touch', pen: 'Stylus' };
+    const label = labels[currentPointerType] || 'Unknown';
+    inputDeviceBadge.textContent = `Input Device: ${label}`;
+    deviceNotice.hidden = currentPointerType !== 'mouse';
+  }
   function clearCanvas() {
-    points = []; drawing = false;
+    points = []; drawing = false; currentPointerType = null;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     analyzeBtn.disabled = true;
     liveStatus.textContent = 'Draw a line to begin. Your stroke stays in this browser.';
+    liveStatus.classList.remove('error');
+    inputDeviceBadge.textContent = 'Input Device: Not detected';
+    deviceNotice.hidden = true;
     classification.textContent = 'Waiting for a drawing'; classification.className = 'result-state';
     resultCopy.textContent = 'Draw a stroke and select Analyze signal to run the model.';
     probability.textContent = '—'; meterFill.style.width = '0%';
@@ -131,16 +149,15 @@
     const pos = canvasPosition(e);
     const now = Number.isFinite(e.timeStamp) ? e.timeStamp : performance.now();
     const prior = points[points.length - 1];
-    let dt = prior ? Math.max((now - prior.t) / 1000, 0.001) : 0.001;
-    let velocity = prior ? Math.hypot(pos.x - prior.x, pos.y - prior.y) / dt : 0;
-    // Normalize velocity to a practical drawing-speed range; pointer dimensions form a normalized radius proxy.
-    const vNorm = clamp(velocity / 1500, 0, 1);
-    const rNorm = clamp(((Number(e.width) || 1) + (Number(e.height) || 1)) / 200, 0, 1);
     const nativePressure = Number(e.pressure);
-    const pressure = (e.pointerType === 'mouse' || nativePressure === 0)
-      ? clamp(0.65 * (1.0 - 0.35 * vNorm) + 0.15 * rNorm, 0, 1)
-      : clamp(Number.isFinite(nativePressure) ? nativePressure : 0.5, 0, 1);
-    const point = { x: pos.x, y: pos.y, pressure, velocity, dt, t: now };
+    const point = {
+      x: pos.x,
+      y: pos.y,
+      t: now,
+      nativePressure: Number.isFinite(nativePressure) ? nativePressure : 0.5,
+      radiusNorm: clamp(((Number(e.width) || 1) + (Number(e.height) || 1)) / 200, 0, 1),
+      pointerType: e.pointerType || currentPointerType || 'unknown'
+    };
     if (prior) {
       ctx.beginPath(); ctx.moveTo(prior.x, prior.y); ctx.lineTo(point.x, point.y); ctx.stroke();
     } else {
@@ -153,7 +170,7 @@
   canvas.addEventListener('pointerdown', e => {
     e.preventDefault();
     if (drawing) return;
-    drawing = true; canvas.setPointerCapture(e.pointerId); addPoint(e);
+    drawing = true; liveStatus.classList.remove('error'); updateDeviceIndicator(e.pointerType); canvas.setPointerCapture(e.pointerId); addPoint(e);
   });
   canvas.addEventListener('pointermove', e => { if (drawing) { e.preventDefault(); addPoint(e); } });
   function finishStroke(e) {
@@ -169,6 +186,34 @@
   window.addEventListener('resize', resizeCanvas);
 
   function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+  function smoothMouseCoordinates(source) {
+    if (source.length < 2) return source.map(point => ({ x: point.x, y: point.y }));
+    return source.map((point, index) => {
+      const start = Math.max(0, index - 2);
+      const end = Math.min(source.length - 1, index + 2);
+      let x = 0, y = 0, samples = 0;
+      for (let j = start; j <= end; j++) {
+        x += source[j].x; y += source[j].y; samples++;
+      }
+      return { x: x / samples, y: y / samples };
+    });
+  }
+  function prepareTrajectory(source, pointerType) {
+    const smoothed = pointerType === 'mouse' ? smoothMouseCoordinates(source) : source;
+    return source.map((point, index) => {
+      const dt = index === 0
+        ? (source.length > 1 ? Math.max((source[1].t - point.t) / 1000, 0.001) : 0.001)
+        : Math.max((point.t - source[index - 1].t) / 1000, 0.001);
+      const dx = index === 0 ? 0 : smoothed[index].x - smoothed[index - 1].x;
+      const dy = index === 0 ? 0 : smoothed[index].y - smoothed[index - 1].y;
+      const velocity = Math.hypot(dx, dy) / dt;
+      const vNorm = clamp(velocity / 1500, 0, 1);
+      const pressure = (pointerType === 'mouse' || point.nativePressure === 0)
+        ? clamp(0.65 * (1.0 - 0.35 * vNorm) + 0.15 * point.radiusNorm, 0, 1)
+        : clamp(point.nativePressure, 0, 1);
+      return { x: smoothed[index].x, y: smoothed[index].y, pressure, velocity, dt };
+    });
+  }
   function resample(source, count) {
     if (!source.length) throw new Error('Draw a stroke before analyzing.');
     if (source.length === 1) return Array.from({ length: count }, () => ({ ...source[0] }));
@@ -268,7 +313,8 @@
     resultCopy.textContent = 'Processing the 256-step motion sequence locally in your browser.';
     try {
       const [session, scaler] = await Promise.all([loadSession(), loadScaler()]);
-      const sequence = resample(points, SEQ_LEN);
+      const preparedTrajectory = prepareTrajectory(points, currentPointerType);
+      const sequence = resample(preparedTrajectory, SEQ_LEN);
       const inputName = session.inputNames[0];
       if (!inputName) throw new Error('The ONNX model does not declare an input.');
       const outputs = await session.run({ [inputName]: createTensor(sequence, scaler) });
