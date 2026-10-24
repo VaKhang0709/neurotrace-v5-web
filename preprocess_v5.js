@@ -152,7 +152,7 @@ function normalizeWindow(window) {
  * to 100 Hz, spatially normalize over the complete trial, apply a zero-phase
  * 12 Hz Butterworth low-pass, derive velocity from filtered coordinates, form
  * 256-step/64-stride windows, then apply per-window XY/pressure/dt transforms.
- * Returns unscaled channel-first windows: [window][5][256].
+ * Returns metadata plus unscaled channel-first windows: [window][5][256].
  */
 export function preprocessV5Trial(rawSamples, { forcePressureProxy = false } = {}) {
   const samples = (rawSamples || []).filter(sample =>
@@ -223,8 +223,16 @@ export function preprocessV5Trial(rawSamples, { forcePressureProxy = false } = {
 
   const windows = sliceWindows([xFiltered, yFiltered, pressureFiltered, speed, dtFiltered], V5_WINDOW_SIZE, V5_WINDOW_STRIDE);
   const normalized = windows.map(window => normalizeWindow(resampleWindow(window, V5_SEQ_LEN))).filter(Boolean);
-  if (!normalized.length) throw new Error('No usable V5 signal windows were found. Draw a larger, more varied path.');
-  return normalized;
+  const preprocessedFinite = normalized.every(window => window.every(channel => channel.every(Number.isFinite)));
+  return {
+    windows: normalized,
+    pressureSource: hasVariedPressure ? 'native pressure (V5 low-pass filtered)' : 'V5 virtual-pressure proxy',
+    durationSeconds: duration,
+    pressureNative: hasVariedPressure,
+    droppedWindowCount: windows.length - normalized.length,
+    emptyWindow: normalized.length === 0,
+    preprocessedFinite
+  };
 }
 
 /** Standardize one V5 window and pack it in ONNX [1, 5, 256] channel-first order. */

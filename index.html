@@ -19,23 +19,26 @@
     .intro { margin-bottom:22px; } .intro h2 { font-size:clamp(25px,4vw,34px); letter-spacing:-.03em;margin-bottom:7px; } .intro p {color:var(--muted);max-width:700px;}
     .grid { display:grid;grid-template-columns:minmax(0,1.55fr) minmax(280px,.85fr);gap:18px;align-items:stretch; }
     .card { background:linear-gradient(145deg,rgba(21,36,52,.97),rgba(15,27,41,.97));border:1px solid var(--line);border-radius:18px;overflow:hidden; }
-    .card-head { padding:19px 21px 15px;display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid rgba(36,53,71,.7); }
-    .card-head h3 { font-size:14px; } .card-head span { font-size:12px;color:var(--muted); }
-    .canvas-area { padding:16px; } canvas { width:100%;height:330px;display:block;background:#0b1724;border:1px solid #203348;border-radius:12px;touch-action:none;cursor:crosshair; }
+    .card-head { height:64px;min-height:64px;flex:0 0 64px;padding:10px 18px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(36,53,71,.7); }
+    .card-head h3 { flex:0 0 auto;font-size:14px; } .card-head span { font-size:12px;color:var(--muted); }
+    .canvas-area { padding:16px;contain:layout; }
+    #drawCanvas { width:100%;height:330px;display:block;flex:none;box-sizing:border-box;background:#0b1724;border:1px solid #203348;border-radius:12px;touch-action:none;cursor:crosshair; }
     .hint { display:flex;align-items:center;gap:8px;padding:0 4px 2px;color:var(--muted);font-size:12px; } .hint i {width:7px;height:7px;border-radius:50%;background:var(--cyan);display:inline-block;}
-    .card-head .device-badge { display:inline-flex;align-items:center;gap:7px;border:1px solid #345363;border-radius:999px;padding:5px 10px;color:#c8e8e5;background:#122a32;font-size:11px;font-weight:650;white-space:nowrap; }
-    .device-badge::before { content:"";width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px #5ee1d080; }
-    .device-notice { margin:0 0 12px;padding:9px 11px;border:1px solid #355b5b;border-radius:9px;color:#b8e7df;background:#102b2a;font-size:12px; }
-    .device-notice[hidden] { display:none; }
-    .preset-panel { margin:0 0 15px;padding:12px;border:1px solid #2b4053;border-radius:12px;background:#0d1a28; }
+    .card-head .device-badge { display:inline-flex;align-items:center;justify-content:flex-start;gap:6px;flex:0 1 186px;width:186px;height:38px;min-width:0;white-space:normal;overflow:hidden;border:1px solid #345363;border-radius:10px;padding:5px 8px;color:#c8e8e5;background:#122a32;font-size:10px;line-height:12px;font-weight:650; }
+    .device-badge::before { content:"";flex:0 0 7px;width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px #5ee1d080; }
+    .status-stack { height:112px;min-height:112px;max-height:112px;margin:0 0 10px;display:grid;grid-template-rows:36px 32px 36px;gap:4px;overflow:hidden;contain:layout size; }
+    .status-slot { display:block;box-sizing:border-box;width:100%;height:100%;min-width:0;min-height:0;margin:0;padding:4px 8px;overflow:hidden;border:1px solid transparent;border-radius:8px;font-size:11px;line-height:13px; }
+    .status-slot[hidden] { display:block!important;visibility:hidden; }
+    .preset-status { border-color:#745b38;color:#f0d8a9;background:#2b2419; }
+    .preset-status strong { display:block;margin:0;color:#ffe5b1;font-size:9px;line-height:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    .preset-status span { display:block;color:#cfbea0;font-size:9px;line-height:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    #liveStatus { display:flex;align-items:center;color:#9eb2c5;white-space:nowrap;text-overflow:ellipsis; }
+    .device-notice { color:#b8e7df;background:#102b2a;border-color:#355b5b;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2; }
+    .preset-panel { margin:0 0 10px;padding:12px;border:1px solid #2b4053;border-radius:12px;background:#0d1a28; }
     .preset-actions { display:flex;flex-wrap:wrap;gap:8px; }
     button.preset-button { flex:1 1 210px;background:#1a2c3e;color:#dceaf5;border:1px solid #38536c;text-align:left; }
     button.preset-button:hover:not(:disabled) { background:#233b50; }
     .preset-disclaimer { margin:9px 2px 0;color:#a6b5c3;font-size:11px; }
-    .preset-status { margin:0 0 12px;padding:10px 12px;border:1px solid #745b38;border-radius:9px;color:#f0d8a9;background:#2b2419;font-size:12px; }
-    .preset-status[hidden] { display:none; }
-    .preset-status strong { display:block;margin-bottom:3px;color:#ffe5b1; }
-    .preset-status span { color:#cfbea0; }
     .research-banner { margin:13px 0 0;padding:14px 15px;border:1px solid #3b6580;border-radius:11px;color:#c6e4f2;background:linear-gradient(120deg,#112838,#122631);font-size:12px;line-height:1.55; }
     .research-banner strong { display:block;margin-bottom:4px;color:#e2f5fc;font-size:13px; }
     .research-banner small { display:block;margin-top:5px;color:#a9c3d0;font-size:11px; }
@@ -52,9 +55,15 @@
     .status-row {display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:12px;margin:7px 0;} .status-row b {font-weight:500;color:#d4e1ed;text-align:right;}
     .notice {margin-top:18px;padding:13px 15px;border:1px solid #344352;border-radius:12px;color:#aab9c7;font-size:12px;background:rgba(18,30,43,.62);}
     .notice strong {color:#d2dfeb;}
-    #liveStatus {min-height:19px;color:#9eb2c5;font-size:12px;padding:0 4px 9px;}
+    .debug-panel { margin:14px 0 0;padding:0 15px;border:1px solid #344352;border-radius:12px;background:#0d1723;color:#c1cfdb;font-size:12px; }
+    .debug-panel summary { padding:12px 0;cursor:pointer;color:#d6e4ef;font-weight:650; }
+    .debug-warning { margin:-3px 0 11px;color:#ffcf93;font-size:11px; }
+    .debug-grid { display:grid;grid-template-columns:minmax(125px,.8fr) minmax(0,1.2fr);gap:6px 12px;margin:0 0 12px; }
+    .debug-grid dt { color:#8fa4b7; } .debug-grid dd { margin:0;min-width:0;overflow-wrap:anywhere;color:#d7e4ee; }
+    .debug-subhead { margin:10px 0 5px;color:#9eb5c7;font-size:11px;font-weight:650; }
+    .debug-pre { max-height:240px;overflow:auto;margin:0 0 13px;padding:10px;border:1px solid #243547;border-radius:8px;background:#08121c;color:#cad8e4;font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere; }
     .error {color:#ffaaa4!important;} .healthy {color:var(--cyan);} .detected {color:var(--red);}
-    @media(max-width:760px){.wrap{width:min(100% - 24px,600px);padding-top:22px}.grid{grid-template-columns:1fr}header{margin-bottom:22px}.result{min-height:unset}canvas{height:290px}.badge{display:none}}
+    @media(max-width:760px){.wrap{width:min(100% - 24px,600px);padding-top:22px}.grid{grid-template-columns:1fr}header{margin-bottom:22px}.result{min-height:unset}#drawCanvas{height:290px}.badge{display:none}}
     @media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
   </style>
 </head>
@@ -79,9 +88,11 @@
             </div>
             <p class="preset-disclaimer">Deterministic synthetic kinematics only; these are not UCI Patient #395 or real subject records and do not provide clinical validation.</p>
           </div>
-          <div id="presetStatus" class="preset-status" role="status" aria-live="polite" hidden><strong id="presetStatusTitle">Synthetic Motion Pattern Test (UI Pipeline Validation Only)</strong><span id="presetStatusDetail">Synthetic demonstration only — not patient data or a diagnostic test.</span></div>
-          <div id="liveStatus" role="status" aria-live="polite">Draw a line to begin. Your stroke stays in this browser.</div>
-          <p id="deviceNotice" class="device-notice" role="status" aria-live="polite" hidden>Mouse mode detected: V5 12 Hz low-pass preprocessing is applied; pressure is estimated with the V5 proxy.</p>
+          <div class="status-stack" aria-label="Input and preprocessing status">
+            <div id="presetStatus" class="status-slot preset-status" role="status" aria-live="polite" hidden><strong id="presetStatusTitle">Synthetic Motion Pattern Test (UI Pipeline Validation Only)</strong><span id="presetStatusDetail">Synthetic demonstration only — not patient data or a diagnostic test.</span></div>
+            <div id="liveStatus" class="status-slot" role="status" aria-live="polite">Draw a line to begin. Your stroke stays in this browser.</div>
+            <p id="deviceNotice" class="status-slot device-notice" role="status" aria-live="polite" hidden>Mouse mode detected: V5 12 Hz low-pass preprocessing is applied; pressure is estimated with the V5 proxy.</p>
+          </div>
           <canvas id="drawCanvas" aria-label="Drawing area. Draw a continuous line here."></canvas>
           <aside class="research-banner">
             <strong>🔬 Research Prototype Notice:</strong>
@@ -107,6 +118,24 @@
         </div>
       </section>
     </div>
+    <details id="debugDetails" class="debug-panel">
+      <summary>Technical debug (research)</summary>
+      <p class="debug-warning">Engineering audit only — not for patients and not a diagnosis.</p>
+      <dl class="debug-grid">
+        <dt>Pointer / input device</dt><dd id="debugPointerType">Not run</dd>
+        <dt>Raw point count</dt><dd id="debugPointCount">—</dd>
+        <dt>Duration</dt><dd id="debugDuration">—</dd>
+        <dt>Mean / median Δt</dt><dd id="debugDt">—</dd>
+        <dt>Pressure source</dt><dd id="debugPressure">—</dd>
+        <dt>V5 windows</dt><dd id="debugWindowCount">—</dd>
+        <dt>Aggregation rule</dt><dd id="debugAggregation">—</dd>
+        <dt>Per-window probabilities</dt><dd id="debugWindowProbabilities">—</dd>
+        <dt>Final displayed probability</dt><dd id="debugFinalProbability">—</dd>
+        <dt>NaN / Inf / empty flags</dt><dd id="debugFlags">—</dd>
+      </dl>
+      <div class="debug-subhead">Standardized tensor feature summaries (all fed windows)</div>
+      <pre id="debugFeatureStats" class="debug-pre">Run Analyze to populate the research audit.</pre>
+    </details>
     <aside class="notice"><strong>Important:</strong> This research prototype is not a medical device and does not provide a diagnosis. Do not use its output to make health decisions. If you have concerns, consult a qualified healthcare professional.</aside>
   </main>
 <script type="module">
@@ -153,8 +182,23 @@ import { preprocessV5Trial, standardizeV5Window } from './preprocess_v5.js';
   const resultCopy = document.getElementById('resultCopy');
   const probability = document.getElementById('probability');
   const meterFill = document.getElementById('meterFill');
+  const debugElements = {
+    pointerType: document.getElementById('debugPointerType'),
+    pointCount: document.getElementById('debugPointCount'),
+    duration: document.getElementById('debugDuration'),
+    dt: document.getElementById('debugDt'),
+    pressure: document.getElementById('debugPressure'),
+    windowCount: document.getElementById('debugWindowCount'),
+    aggregation: document.getElementById('debugAggregation'),
+    windowProbabilities: document.getElementById('debugWindowProbabilities'),
+    finalProbability: document.getElementById('debugFinalProbability'),
+    flags: document.getElementById('debugFlags'),
+    featureStats: document.getElementById('debugFeatureStats')
+  };
   let points = [];
   let drawing = false;
+  let canvasLockedForStroke = false;
+  let resizePending = false;
   let currentPointerType = null;
   let activePreset = null;
   let inferenceRunning = false;
@@ -162,6 +206,7 @@ import { preprocessV5Trial, standardizeV5Window } from './preprocess_v5.js';
   let scalerPromise;
 
   function resizeCanvas() {
+    if (drawing) { resizePending = true; return; }
     const rect = canvas.getBoundingClientRect();
     const dpr = Math.max(1, window.devicePixelRatio || 1);
     const snapshot = points;
@@ -177,6 +222,19 @@ import { preprocessV5Trial, standardizeV5Window } from './preprocess_v5.js';
       ctx.stroke();
     }
   }
+  function lockCanvasForStroke() {
+    const rect = canvas.getBoundingClientRect();
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
+    canvasLockedForStroke = true;
+  }
+  function unlockCanvasAfterStroke() {
+    if (!canvasLockedForStroke) return;
+    canvas.style.width = '';
+    canvas.style.height = '';
+    canvasLockedForStroke = false;
+    requestAnimationFrame(() => { resizePending = false; resizeCanvas(); });
+  }
   function updateDeviceIndicator(pointerType) {
     currentPointerType = pointerType || 'unknown';
     const labels = { mouse: 'Mouse (12 Hz Filtered)', touch: 'Touch', pen: 'Stylus' };
@@ -186,6 +244,7 @@ import { preprocessV5Trial, standardizeV5Window } from './preprocess_v5.js';
   }
   function clearCanvas() {
     points = []; drawing = false; currentPointerType = null; activePreset = null;
+    unlockCanvasAfterStroke();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     presetStatus.hidden = true;
     presetStatusTitle.textContent = 'Synthetic Motion Pattern Test (UI Pipeline Validation Only)';
@@ -228,6 +287,7 @@ import { preprocessV5Trial, standardizeV5Window } from './preprocess_v5.js';
     e.preventDefault();
     if (drawing || inferenceRunning) return;
     if (activePreset) clearCanvas();
+    lockCanvasForStroke();
     drawing = true; liveStatus.classList.remove('error'); updateDeviceIndicator(e.pointerType); canvas.setPointerCapture(e.pointerId); addPoint(e);
   });
   canvas.addEventListener('pointermove', e => { if (drawing) { e.preventDefault(); addPoint(e); } });
@@ -235,13 +295,19 @@ import { preprocessV5Trial, standardizeV5Window } from './preprocess_v5.js';
     if (!drawing) return;
     if (e && e.pointerId !== undefined && canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
     drawing = false;
-    if (points.length >= 2) liveStatus.textContent = `${points.length} samples ready. Select Analyze signal when you are ready.`;
+    unlockCanvasAfterStroke();
+    liveStatus.textContent = points.length >= 20
+      ? `${points.length} samples ready. Select Analyze signal when you are ready.`
+      : `${points.length} samples captured; a longer stroke is needed for V5 preprocessing.`;
   }
   canvas.addEventListener('pointerup', finishStroke);
   canvas.addEventListener('pointercancel', finishStroke);
-  canvas.addEventListener('lostpointercapture', () => { drawing = false; });
+  canvas.addEventListener('lostpointercapture', finishStroke);
   clearBtn.addEventListener('click', clearCanvas);
-  window.addEventListener('resize', resizeCanvas);
+  window.addEventListener('resize', () => {
+    if (drawing) { resizePending = true; return; }
+    resizeCanvas();
+  });
 
   function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
   function presetToSamples(channels) {
@@ -282,11 +348,16 @@ import { preprocessV5Trial, standardizeV5Window } from './preprocess_v5.js';
     presetStatusDetail.textContent = `${name} contains generated synthetic kinematics only—not patient data or clinical validation.`;
     liveStatus.textContent = `${name} loaded and drawn. Running the unified V5 preprocessing pipeline.`;
     drawPresetPath(channels);
+    let rawSamples = [];
     try {
-      const windows = preprocessV5Trial(presetToSamples(channels));
+      rawSamples = presetToSamples(channels);
+      const processed = preprocessV5Trial(rawSamples);
       presetStatusDetail.textContent = 'Synthetic pattern is being passed through the V5 preprocessor for UI pipeline validation only.';
-      void runInference(windows, { presetName: name, expectedPositive });
+      void runInference(processed, { presetName: name, expectedPositive, rawSamples, pointerType: 'synthetic' });
     } catch (error) {
+      const debugReport = makeDebugReport(null, rawSamples, 'synthetic');
+      debugReport.flags.inferenceError = error && error.message ? error.message : 'preprocessing failed';
+      updateDebugPanel(debugReport);
       classification.textContent = 'Unable to preprocess'; classification.className = 'result-state error';
       resultCopy.textContent = error && error.message ? error.message : 'The synthetic pattern could not be preprocessed.';
       presetStatusDetail.textContent = error && error.message ? error.message : 'Preset preprocessing failed.';
@@ -340,6 +411,75 @@ import { preprocessV5Trial, standardizeV5Window } from './preprocess_v5.js';
     }
     return sessionPromise;
   }
+  function updateDebugPanel(report) {
+    const fmt = value => Number.isFinite(value) ? value.toFixed(5) : 'n/a';
+    debugElements.pointerType.textContent = `${report.pointerType || 'unknown'} (${report.inputDevice || 'unknown'})`;
+    debugElements.pointCount.textContent = String(report.rawPointCount ?? 0);
+    debugElements.duration.textContent = `${fmt(report.durationSeconds)} s`;
+    debugElements.dt.textContent = `${fmt(report.meanDt)} s / ${fmt(report.medianDt)} s`;
+    debugElements.pressure.textContent = report.pressureSource || 'unknown';
+    debugElements.windowCount.textContent = `${report.windowsProduced ?? 0} produced; ${report.droppedWindowCount ?? 0} empty/skipped`;
+    debugElements.aggregation.textContent = 'Arithmetic mean of per-window sigmoid probabilities';
+    debugElements.windowProbabilities.textContent = report.windowProbabilities?.length
+      ? report.windowProbabilities.map((value, i) => `#${i + 1}: ${(value * 100).toFixed(2)}%`).join(' · ')
+      : 'Not available';
+    debugElements.finalProbability.textContent = Number.isFinite(report.finalProbability)
+      ? `${(report.finalProbability * 100).toFixed(2)}%`
+      : 'Not available';
+    const flags = report.flags || {};
+    debugElements.flags.textContent = [
+      `raw NaN/Inf: ${flags.rawNonFinite ? 'YES' : 'no'}`,
+      `preprocessed NaN/Inf: ${flags.preprocessedNonFinite ? 'YES' : 'no'}`,
+      `tensor NaN/Inf: ${flags.tensorNonFinite ? 'YES' : 'no'}`,
+      `empty windows: ${flags.emptyWindow ? 'YES' : 'no'}`,
+      `inference error: ${flags.inferenceError ? flags.inferenceError : 'none'}`
+    ].join(' · ');
+    const names = ['x', 'y', 'pressure', 'velocity', 'dt'];
+    debugElements.featureStats.textContent = report.featureStats?.length
+      ? report.featureStats.map((stat, i) => `${names[i]}: min=${fmt(stat.min)}  max=${fmt(stat.max)}  mean=${fmt(stat.mean)}`).join('\n')
+      : 'Standardized tensor summaries unavailable.';
+  }
+  function rawTimingSummary(rawSamples) {
+    const deltas = [];
+    const times = (rawSamples || []).map(point => Number(point.t));
+    for (let i = 1; i < times.length; i++) {
+      if (!Number.isFinite(times[i]) || !Number.isFinite(times[i - 1])) continue;
+      const dt = (times[i] - times[i - 1]) / 1000;
+      if (Number.isFinite(dt)) deltas.push(dt);
+    }
+    const validTimes = times.filter(Number.isFinite);
+    const sorted = [...deltas].sort((a, b) => a - b);
+    const medianDt = sorted.length
+      ? (sorted.length % 2 ? sorted[(sorted.length - 1) / 2] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2)
+      : NaN;
+    const durationSeconds = validTimes.length > 1 ? Math.max(0, (validTimes[validTimes.length - 1] - validTimes[0]) / 1000) : 0;
+    return { meanDt: deltas.length ? deltas.reduce((sum, value) => sum + value, 0) / deltas.length : NaN, medianDt, durationSeconds };
+  }
+  function makeDebugReport(processed, rawSamples, pointerType) {
+    const safeSamples = rawSamples || [];
+    const timing = rawTimingSummary(safeSamples);
+    const rawNonFinite = safeSamples.some(point => ![point.x, point.y, point.t, point.nativePressure].every(value => Number.isFinite(Number(value))));
+    const windows = processed?.windows || [];
+    return {
+      pointerType: pointerType || 'unknown',
+      inputDevice: inputDeviceBadge.textContent,
+      rawPointCount: safeSamples.length,
+      ...timing,
+      pressureSource: processed?.pressureSource || (pointerType === 'mouse' ? 'V5 virtual-pressure proxy' : 'unknown (preprocessing failed)'),
+      windowsProduced: windows.length,
+      droppedWindowCount: processed?.droppedWindowCount || 0,
+      windowProbabilities: [],
+      finalProbability: NaN,
+      featureStats: null,
+      flags: {
+        rawNonFinite,
+        preprocessedNonFinite: processed?.preprocessedFinite === false,
+        tensorNonFinite: false,
+        emptyWindow: windows.length === 0 || Boolean(processed?.emptyWindow) || Boolean(processed?.droppedWindowCount),
+        inferenceError: ''
+      }
+    };
+  }
   function outputProbability(output, activation) {
     const values = output && output.data ? Array.from(output.data, Number) : [];
     if (!values.length || values.some(value => !Number.isFinite(value))) throw new Error('The model returned an empty or invalid output.');
@@ -359,8 +499,11 @@ import { preprocessV5Trial, standardizeV5Window } from './preprocess_v5.js';
     if (!Number.isFinite(value)) throw new Error('Could not interpret the model output.');
     return clamp(value, 0, 1);
   }
-  async function runInference(windows, { presetName = null, expectedPositive = null } = {}) {
+  async function runInference(processed, { presetName = null, expectedPositive = null, rawSamples = points, pointerType = currentPointerType } = {}) {
     if (inferenceRunning) return;
+    const windows = processed?.windows || [];
+    const debugReport = makeDebugReport(processed, rawSamples, pointerType);
+    updateDebugPanel(debugReport);
     inferenceRunning = true;
     analyzeBtn.disabled = true; analyzeBtn.textContent = 'Analyzing…';
     clearBtn.disabled = true;
@@ -374,14 +517,40 @@ import { preprocessV5Trial, standardizeV5Window } from './preprocess_v5.js';
       const inputName = session.inputNames[0];
       const outputName = session.outputNames[0];
       if (!inputName || !outputName) throw new Error('The ONNX model input/output contract is missing.');
+      const standardizedWindows = windows.map(window => standardizeV5Window(window, scaler));
+      const featureValues = CHANNELS.map(() => []);
+      for (const data of standardizedWindows) {
+        for (let channel = 0; channel < CHANNELS.length; channel++) {
+          const offset = channel * 256;
+          for (let t = 0; t < 256; t++) featureValues[channel].push(data[offset + t]);
+        }
+      }
+      debugReport.flags.tensorNonFinite = standardizedWindows.some(data => Array.from(data).some(value => !Number.isFinite(value)));
+      debugReport.featureStats = featureValues.map(values => {
+        const finite = values.filter(Number.isFinite);
+        return finite.length ? finite.reduce((summary, value) => ({
+          min: Math.min(summary.min, value),
+          max: Math.max(summary.max, value),
+          sum: summary.sum + value
+        }), { min: Infinity, max: -Infinity, sum: 0 }) : { min: NaN, max: NaN, mean: NaN };
+      }).map((summary, index) => featureValues[index].some(Number.isFinite)
+        ? { min: summary.min, max: summary.max, mean: summary.sum / featureValues[index].filter(Number.isFinite).length }
+        : summary);
+      updateDebugPanel(debugReport);
+      if (debugReport.flags.preprocessedNonFinite || debugReport.flags.tensorNonFinite) {
+        throw new Error('Non-finite values were found in the V5 features or standardized ONNX tensor; inference was stopped.');
+      }
       const scores = [];
-      for (const window of windows) {
-        const data = standardizeV5Window(window, scaler);
+      for (const data of standardizedWindows) {
         const tensor = new ort.Tensor('float32', data, [1, 5, 256]);
         const outputs = await session.run({ [inputName]: tensor });
         scores.push(outputProbability(outputs[outputName], scaler.outputActivation));
+        debugReport.windowProbabilities = [...scores];
+        updateDebugPanel(debugReport);
       }
       const score = scores.reduce((sum, value) => sum + value, 0) / scores.length;
+      debugReport.finalProbability = score;
+      updateDebugPanel(debugReport);
       const isPositive = score >= scaler.threshold;
       classification.textContent = isPositive ? "Parkinson's Disease Detected" : 'Healthy Control';
       classification.className = `result-state ${isPositive ? 'detected' : 'healthy'}`;
@@ -399,6 +568,8 @@ import { preprocessV5Trial, standardizeV5Window } from './preprocess_v5.js';
       }
     } catch (error) {
       console.error('NeuroTrace inference failed:', error);
+      debugReport.flags.inferenceError = error && error.message ? error.message : 'unknown error';
+      updateDebugPanel(debugReport);
       classification.textContent = 'Unable to analyze'; classification.className = 'result-state error';
       resultCopy.textContent = error && error.message ? error.message : 'An unexpected error occurred while running inference.';
       liveStatus.textContent = 'Analysis failed. Check that the model, scaler, and V5 preprocessor are available.';
@@ -417,9 +588,12 @@ import { preprocessV5Trial, standardizeV5Window } from './preprocess_v5.js';
   analyzeBtn.addEventListener('click', () => {
     if (drawing || inferenceRunning || points.length < 20) return;
     try {
-      const windows = preprocessV5Trial(points, { forcePressureProxy: currentPointerType === 'mouse' });
-      void runInference(windows);
+      const processed = preprocessV5Trial(points, { forcePressureProxy: currentPointerType === 'mouse' });
+      void runInference(processed, { rawSamples: points, pointerType: currentPointerType });
     } catch (error) {
+      const debugReport = makeDebugReport(null, points, currentPointerType);
+      debugReport.flags.inferenceError = error && error.message ? error.message : 'preprocessing failed';
+      updateDebugPanel(debugReport);
       classification.textContent = 'Unable to preprocess'; classification.className = 'result-state error';
       resultCopy.textContent = error && error.message ? error.message : 'Could not preprocess this stroke.';
       liveStatus.textContent = 'V5 preprocessing failed. Draw a longer, continuous path and try again.';
