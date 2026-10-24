@@ -1,0 +1,63 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function ownsNewRecord() {
+      return signedIn() && request.resource.data.owner_uid == request.auth.uid;
+    }
+    function ownsExistingRecord() {
+      return signedIn() && resource.data.owner_uid == request.auth.uid;
+    }
+
+    match /v6_consents/{consentId} {
+      allow create: if ownsNewRecord()
+        && request.resource.data.keys().hasOnly([
+          'consent_id', 'device_uuid', 'consent_version', 'consented_at',
+          'age_over_18', 'privacy_terms', 'research_donation', 'no_medical_diagnosis',
+          'locale', 'owner_uid', 'created_at'
+        ])
+        && request.resource.data.consent_id == consentId
+        && request.resource.data.consent_version is string
+        && request.resource.data.age_over_18 == true
+        && request.resource.data.privacy_terms == true
+        && request.resource.data.research_donation == true
+        && request.resource.data.no_medical_diagnosis == true;
+      allow get, delete: if ownsExistingRecord();
+      allow update: if ownsExistingRecord()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['created_at']);
+      allow list: if false;
+    }
+
+    match /v6_sessions/{sessionId} {
+      allow create: if ownsNewRecord()
+        && request.resource.data.keys().hasOnly([
+          'session_id', 'device_uuid', 'device_fingerprint_hash', 'consent_id',
+          'session_metadata', 'demographics', 'device_info', 'tasks',
+          'created_at', 'client_created_at', 'schema_version', 'owner_uid'
+        ])
+        && request.resource.data.session_id == sessionId
+        && request.resource.data.schema_version == 'v6.0'
+        && request.resource.data.consent_id is string
+        && request.resource.data.tasks is list
+        && request.resource.data.tasks.size() == 6
+        && request.resource.data.device_uuid is string
+        && request.resource.data.device_fingerprint_hash is string
+        && exists(/databases/$(database)/documents/v6_consents/$(request.resource.data.consent_id))
+        && get(/databases/$(database)/documents/v6_consents/$(request.resource.data.consent_id)).data.owner_uid == request.auth.uid;
+      allow get, delete: if ownsExistingRecord();
+      allow update: if ownsExistingRecord()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['created_at']);
+      allow list: if false;
+    }
+
+    // Dashboard reads a separately generated, disclosure-reviewed aggregate only.
+    match /v6_public_stats/{statsId} {
+      allow get: if statsId == 'current';
+      allow list, create, update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

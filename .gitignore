@@ -1,0 +1,3 @@
+# Deployment-specific Firebase settings must never be committed.
+config/firebase_config.local.js
+.firebase/
