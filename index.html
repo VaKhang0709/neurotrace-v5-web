@@ -36,6 +36,9 @@
     .preset-status[hidden] { display:none; }
     .preset-status strong { display:block;margin-bottom:3px;color:#ffe5b1; }
     .preset-status span { color:#cfbea0; }
+    .research-banner { margin:13px 0 0;padding:14px 15px;border:1px solid #3b6580;border-radius:11px;color:#c6e4f2;background:linear-gradient(120deg,#112838,#122631);font-size:12px;line-height:1.55; }
+    .research-banner strong { display:block;margin-bottom:4px;color:#e2f5fc;font-size:13px; }
+    .research-banner small { display:block;margin-top:5px;color:#a9c3d0;font-size:11px; }
     .actions {display:flex;gap:10px;padding:14px 16px 17px;border-top:1px solid rgba(36,53,71,.7);}
     button {border:0;border-radius:10px;padding:11px 16px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:filter .15s,transform .15s;} button:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px);} button:disabled{opacity:.55;cursor:wait;}
     .primary {background:var(--cyan);color:#082021;flex:1;} .secondary {background:#1c2d40;color:#d7e4ef;border:1px solid #30475b;}
@@ -76,10 +79,15 @@
             </div>
             <p class="preset-disclaimer">Deterministic synthetic kinematics only; these are not UCI Patient #395 or real subject records and do not provide clinical validation.</p>
           </div>
-          <div id="presetStatus" class="preset-status" role="status" aria-live="polite" hidden><strong id="presetStatusTitle">Clinical Preset Loaded: Running automated diagnostic benchmark...</strong><span id="presetStatusDetail">Synthetic demonstration only — not patient data or a diagnostic test.</span></div>
+          <div id="presetStatus" class="preset-status" role="status" aria-live="polite" hidden><strong id="presetStatusTitle">Synthetic Motion Pattern Test (UI Pipeline Validation Only)</strong><span id="presetStatusDetail">Synthetic demonstration only — not patient data or a diagnostic test.</span></div>
           <div id="liveStatus" role="status" aria-live="polite">Draw a line to begin. Your stroke stays in this browser.</div>
-          <p id="deviceNotice" class="device-notice" role="status" aria-live="polite" hidden>Mouse mode detected: Kinetic smoothing applied to reduce hardware sensor noise.</p>
+          <p id="deviceNotice" class="device-notice" role="status" aria-live="polite" hidden>Mouse mode detected: V5 12 Hz low-pass preprocessing is applied; pressure is estimated with the V5 proxy.</p>
           <canvas id="drawCanvas" aria-label="Drawing area. Draw a continuous line here."></canvas>
+          <aside class="research-banner">
+            <strong>🔬 Research Prototype Notice:</strong>
+            Model trained on digitized graphics tablet dataset (UCI #395). Touchscreen and Mouse inputs are evaluated under experimental domain-adaptation constraints.
+            <small>Training sources include Wacom digitizer PD/control trials and mobile touchscreen healthy-control samples. Mouse input is not independently clinically validated; this prototype is not a medical device.</small>
+          </aside>
           <div class="hint"><i></i><span>Keep your movement continuous for a useful signal.</span></div>
         </div>
         <div class="actions"><button id="analyzeBtn" class="primary" disabled>Analyze signal</button><button id="clearBtn" class="secondary" type="button">Clear canvas</button></div>
@@ -101,7 +109,9 @@
     </div>
     <aside class="notice"><strong>Important:</strong> This research prototype is not a medical device and does not provide a diagnosis. Do not use its output to make health decisions. If you have concerns, consult a qualified healthcare professional.</aside>
   </main>
-<script>
+<script type="module">
+import { preprocessV5Trial, standardizeV5Window } from './preprocess_v5.js';
+
 (() => {
   'use strict';
   const SEQ_LEN = 256;
@@ -169,7 +179,7 @@
   }
   function updateDeviceIndicator(pointerType) {
     currentPointerType = pointerType || 'unknown';
-    const labels = { mouse: 'Mouse (Smoothed)', touch: 'Touch', pen: 'Stylus' };
+    const labels = { mouse: 'Mouse (12 Hz Filtered)', touch: 'Touch', pen: 'Stylus' };
     const label = labels[currentPointerType] || 'Unknown';
     inputDeviceBadge.textContent = `Input Device: ${label}`;
     deviceNotice.hidden = currentPointerType !== 'mouse';
@@ -178,7 +188,7 @@
     points = []; drawing = false; currentPointerType = null; activePreset = null;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     presetStatus.hidden = true;
-    presetStatusTitle.textContent = 'Clinical Preset Loaded: Running automated diagnostic benchmark...';
+    presetStatusTitle.textContent = 'Synthetic Motion Pattern Test (UI Pipeline Validation Only)';
     presetStatusDetail.textContent = 'Synthetic demonstration only — not patient data or a diagnostic test.';
     analyzeBtn.disabled = true;
     liveStatus.textContent = 'Draw a line to begin. Your stroke stays in this browser.';
@@ -203,7 +213,6 @@
       y: pos.y,
       t: now,
       nativePressure: Number.isFinite(nativePressure) ? nativePressure : 0.5,
-      radiusNorm: clamp(((Number(e.width) || 1) + (Number(e.height) || 1)) / 200, 0, 1),
       pointerType: e.pointerType || currentPointerType || 'unknown'
     };
     if (prior) {
@@ -212,8 +221,8 @@
       ctx.beginPath(); ctx.arc(point.x, point.y, ctx.lineWidth / 2, 0, Math.PI * 2); ctx.fillStyle = ctx.strokeStyle; ctx.fill();
     }
     points.push(point);
-    analyzeBtn.disabled = points.length < 2;
-    liveStatus.textContent = `${points.length} signal samples captured.`;
+    analyzeBtn.disabled = points.length < 20;
+    liveStatus.textContent = `${points.length} signal samples captured${points.length < 20 ? ' — keep drawing for at least 20 points' : ''}.`;
   }
   canvas.addEventListener('pointerdown', e => {
     e.preventDefault();
@@ -235,93 +244,20 @@
   window.addEventListener('resize', resizeCanvas);
 
   function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
-  function smoothMouseCoordinates(source) {
-    if (source.length < 2) return source.map(point => ({ x: point.x, y: point.y }));
-    return source.map((point, index) => {
-      const start = Math.max(0, index - 2);
-      const end = Math.min(source.length - 1, index + 2);
-      let x = 0, y = 0, samples = 0;
-      for (let j = start; j <= end; j++) {
-        x += source[j].x; y += source[j].y; samples++;
-      }
-      return { x: x / samples, y: y / samples };
-    });
-  }
-  function prepareTrajectory(source, pointerType) {
-    // Preserve mouse de-jittering, then normalize each axis over the smoothed stroke bounds.
-    const smoothed = pointerType === 'mouse' ? smoothMouseCoordinates(source) : source;
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const point of smoothed) {
-      minX = Math.min(minX, point.x); maxX = Math.max(maxX, point.x);
-      minY = Math.min(minY, point.y); maxY = Math.max(maxY, point.y);
-    }
-    const xRange = maxX - minX + 1e-6;
-    const yRange = maxY - minY + 1e-6;
-    const timeSec = source.map(point => point.t / 1000.0);
-
-    return source.map((point, index) => {
-      const x = (smoothed[index].x - minX) / xRange;
-      const y = (smoothed[index].y - minY) / yRange;
-      const dt = index === 0 ? 0 : timeSec[index] - timeSec[index - 1];
-      const prevX = index === 0 ? x : (smoothed[index - 1].x - minX) / xRange;
-      const prevY = index === 0 ? y : (smoothed[index - 1].y - minY) / yRange;
-      const dx = index === 0 ? 0 : x - prevX;
-      const dy = index === 0 ? 0 : y - prevY;
-      const velocity = Math.hypot(dx, dy) / (dt + 1e-6);
-      const vNorm = clamp(velocity / 1500, 0, 1);
-      const pressure = (pointerType === 'mouse' || point.nativePressure === 0)
-        ? clamp(0.65 * (1.0 - 0.35 * vNorm) + 0.15 * point.radiusNorm, 0, 1)
-        : clamp(point.nativePressure, 0, 1);
-      return { x, y, pressure, velocity, dt, t: timeSec[index] };
-    });
-  }
-  function resample(source, count) {
-    if (!source.length) throw new Error('Draw a stroke before analyzing.');
-    if (source.length === 1) return Array.from({ length: count }, () => ({ ...source[0] }));
-    const output = [];
-    const startTime = source[0].t;
-    const endTime = source[source.length - 1].t;
-    const duration = endTime - startTime;
-    let right = 1;
-    for (let i = 0; i < count; i++) {
-      // Uniform target times span t0..tEnd; degenerate timestamps fall back to uniform sample positions.
-      const targetTime = duration > 0
-        ? startTime + duration * i / (count - 1)
-        : startTime;
-      while (duration > 0 && right < source.length - 1 && source[right].t < targetTime) right++;
-      let leftIndex, rightIndex, alpha;
-      if (duration <= 0) {
-        const position = i * (source.length - 1) / (count - 1);
-        leftIndex = Math.floor(position);
-        rightIndex = Math.min(leftIndex + 1, source.length - 1);
-        alpha = position - leftIndex;
-      } else if (targetTime <= startTime) {
-        leftIndex = rightIndex = 0; alpha = 0;
-      } else if (targetTime >= endTime) {
-        leftIndex = rightIndex = source.length - 1; alpha = 0;
-      } else {
-        leftIndex = right - 1; rightIndex = right;
-        const span = source[rightIndex].t - source[leftIndex].t;
-        alpha = span > 0 ? (targetTime - source[leftIndex].t) / span : 0;
-      }
-      const a = source[leftIndex], b = source[rightIndex], sample = {};
-      for (const key of CHANNELS) sample[key] = a[key] + (b[key] - a[key]) * alpha;
-      output.push(sample);
-    }
-    return output;
-  }
-  function presetToSequence(channels) {
+  function presetToSamples(channels) {
     if (!Array.isArray(channels) || channels.length !== CHANNELS.length || channels.some(row => !Array.isArray(row) || row.length !== SEQ_LEN)) {
       throw new Error('Preset data must have shape [5, 256].');
     }
-    return Array.from({ length: SEQ_LEN }, (_, timeIndex) => {
-      const sample = {};
-      CHANNELS.forEach((channelName, channelIndex) => {
-        const value = Number(channels[channelIndex][timeIndex]);
-        if (!Number.isFinite(value)) throw new Error('Preset contains an invalid feature value.');
-        sample[channelName] = value;
-      });
-      return sample;
+    let timeMs = 0;
+    return Array.from({ length: SEQ_LEN }, (_, i) => {
+      if (i > 0) timeMs += Math.max(0, Number(channels[4][i])) * 1000;
+      return {
+        x: Number(channels[0][i]),
+        y: Number(channels[1][i]),
+        t: timeMs,
+        nativePressure: Number(channels[2][i]),
+        pointerType: 'synthetic'
+      };
     });
   }
   function drawPresetPath(channels) {
@@ -342,11 +278,20 @@
     activePreset = channels;
     inputDeviceBadge.textContent = 'Input Device: Synthetic preset';
     presetStatus.hidden = false;
-    presetStatusTitle.textContent = 'Clinical Preset Loaded: Running automated diagnostic benchmark...';
+    presetStatusTitle.textContent = 'Synthetic Motion Pattern Test (UI Pipeline Validation Only)';
     presetStatusDetail.textContent = `${name} contains generated synthetic kinematics only—not patient data or clinical validation.`;
-    liveStatus.textContent = `${name} loaded and drawn. Running the model on this synthetic sequence.`;
+    liveStatus.textContent = `${name} loaded and drawn. Running the unified V5 preprocessing pipeline.`;
     drawPresetPath(channels);
-    void runInference(presetToSequence(channels), { presetName: name, expectedPositive });
+    try {
+      const windows = preprocessV5Trial(presetToSamples(channels));
+      presetStatusDetail.textContent = 'Synthetic pattern is being passed through the V5 preprocessor for UI pipeline validation only.';
+      void runInference(windows, { presetName: name, expectedPositive });
+    } catch (error) {
+      classification.textContent = 'Unable to preprocess'; classification.className = 'result-state error';
+      resultCopy.textContent = error && error.message ? error.message : 'The synthetic pattern could not be preprocessed.';
+      presetStatusDetail.textContent = error && error.message ? error.message : 'Preset preprocessing failed.';
+      liveStatus.textContent = 'Synthetic preset preprocessing failed.';
+    }
   }
   function findChannelStats(config, statName) {
     const statAliases = statName === 'mean' ? ['mean', 'mean_', 'means'] : ['scale', 'scale_', 'std', 'std_', 'scales'];
@@ -395,20 +340,6 @@
     }
     return sessionPromise;
   }
-  function createTensor(sequence, scaler) {
-    // Channel-first ONNX layout [1, 5, 256]: X[0..255], Y[256..511],
-    // pressure[512..767], velocity[768..1023], then dt[1024..1279].
-    const flatFloat32Array = new Float32Array(1 * CHANNELS.length * SEQ_LEN);
-    for (let channelIndex = 0; channelIndex < CHANNELS.length; channelIndex++) {
-      const channelName = CHANNELS[channelIndex];
-      const channelOffset = channelIndex * SEQ_LEN;
-      for (let timeIndex = 0; timeIndex < SEQ_LEN; timeIndex++) {
-        const standardized = (sequence[timeIndex][channelName] - scaler.mean[channelIndex]) / scaler.scale[channelIndex];
-        flatFloat32Array[channelOffset + timeIndex] = standardized;
-      }
-    }
-    return new ort.Tensor('float32', flatFloat32Array, [1, 5, 256]);
-  }
   function outputProbability(output, activation) {
     const values = output && output.data ? Array.from(output.data, Number) : [];
     if (!values.length || values.some(value => !Number.isFinite(value))) throw new Error('The model returned an empty or invalid output.');
@@ -428,61 +359,72 @@
     if (!Number.isFinite(value)) throw new Error('Could not interpret the model output.');
     return clamp(value, 0, 1);
   }
-  async function runInference(sequence, { presetName = null, expectedPositive = null } = {}) {
+  async function runInference(windows, { presetName = null, expectedPositive = null } = {}) {
     if (inferenceRunning) return;
     inferenceRunning = true;
     analyzeBtn.disabled = true; analyzeBtn.textContent = 'Analyzing…';
     clearBtn.disabled = true;
     presetButtons.forEach(button => { button.disabled = true; });
-    liveStatus.textContent = 'Preparing signal and loading model…';
+    liveStatus.textContent = 'Running the standardized V5 preprocessing and model inference…';
     classification.textContent = 'Analysis in progress'; classification.className = 'result-state';
-    resultCopy.textContent = 'Processing the 256-step motion sequence locally in your browser.';
+    resultCopy.textContent = `Processing ${windows.length} V5 signal window${windows.length === 1 ? '' : 's'} locally in your browser.`;
     try {
+      if (!Array.isArray(windows) || windows.length === 0) throw new Error('The V5 preprocessor returned no inference windows.');
       const [session, scaler] = await Promise.all([loadSession(), loadScaler()]);
       const inputName = session.inputNames[0];
-      if (!inputName) throw new Error('The ONNX model does not declare an input.');
-      const outputs = await session.run({ [inputName]: createTensor(sequence, scaler) });
       const outputName = session.outputNames[0];
-      const score = outputProbability(outputs[outputName], scaler.outputActivation);
+      if (!inputName || !outputName) throw new Error('The ONNX model input/output contract is missing.');
+      const scores = [];
+      for (const window of windows) {
+        const data = standardizeV5Window(window, scaler);
+        const tensor = new ort.Tensor('float32', data, [1, 5, 256]);
+        const outputs = await session.run({ [inputName]: tensor });
+        scores.push(outputProbability(outputs[outputName], scaler.outputActivation));
+      }
+      const score = scores.reduce((sum, value) => sum + value, 0) / scores.length;
       const isPositive = score >= scaler.threshold;
       classification.textContent = isPositive ? "Parkinson's Disease Detected" : 'Healthy Control';
       classification.className = `result-state ${isPositive ? 'detected' : 'healthy'}`;
       const expectedLabel = expectedPositive === null ? null : (expectedPositive ? 'PD-style positive' : 'HC-style negative');
       const matchedExpected = expectedPositive === null ? null : (expectedPositive === isPositive);
       resultCopy.textContent = presetName
-        ? `Synthetic ${presetName} input (expected ${expectedLabel}): model returned ${isPositive ? 'positive' : 'negative'}${matchedExpected ? ' — pattern matched' : ' — pattern did not match'}. This is not clinical validation.`
-        : (isPositive ? 'The model score is at or above the configured decision threshold.' : 'The model score is below the configured decision threshold.');
+        ? `Synthetic ${presetName} input (expected ${expectedLabel}): model returned ${isPositive ? 'positive' : 'negative'}${matchedExpected ? ' — pattern matched' : ' — pattern did not match'}. ${windows.length} window(s); not clinical validation.`
+        : `Model score is ${isPositive ? 'at or above' : 'below'} the configured decision threshold across ${windows.length} V5 window(s).`;
       probability.textContent = `${(score * 100).toFixed(1)}%`;
       meterFill.style.width = `${score * 100}%`;
-      liveStatus.textContent = presetName
-        ? `${presetName} synthetic preset inference complete; output shown above.`
-        : 'Analysis complete. Signal processing was performed in this browser.';
+      liveStatus.textContent = `V5 preprocessing complete: whole-trial spatial normalization, 12 Hz low-pass filtering, and ${windows.length} window(s) analyzed.`;
       if (presetName) {
-        presetStatusTitle.textContent = 'Clinical Preset Loaded: Automated inference complete.';
+        presetStatusTitle.textContent = 'Synthetic Motion Pattern Test (UI Pipeline Validation Only)';
         presetStatusDetail.textContent = `Synthetic ${presetName} expected ${expectedLabel}; model output ${matchedExpected ? 'matched' : 'did not match'} that pattern. Not clinical validation.`;
       }
     } catch (error) {
       console.error('NeuroTrace inference failed:', error);
       classification.textContent = 'Unable to analyze'; classification.className = 'result-state error';
       resultCopy.textContent = error && error.message ? error.message : 'An unexpected error occurred while running inference.';
-      liveStatus.textContent = 'Analysis failed. Check that the model and scaler files are available.';
+      liveStatus.textContent = 'Analysis failed. Check that the model, scaler, and V5 preprocessor are available.';
       liveStatus.classList.add('error');
       if (presetName) {
-        presetStatusTitle.textContent = 'Clinical Preset Loaded: Inference failed.';
+        presetStatusTitle.textContent = 'Synthetic Motion Pattern Test (UI Pipeline Validation Only)';
         presetStatusDetail.textContent = error && error.message ? error.message : 'Could not run the synthetic preset.';
       }
     } finally {
       inferenceRunning = false;
-      analyzeBtn.textContent = 'Analyze signal'; analyzeBtn.disabled = points.length < 2;
+      analyzeBtn.textContent = 'Analyze signal'; analyzeBtn.disabled = points.length < 20;
       clearBtn.disabled = false;
       presetButtons.forEach(button => { button.disabled = false; });
     }
   }
   analyzeBtn.addEventListener('click', () => {
-    if (drawing || inferenceRunning || points.length < 2) return;
-    const preparedTrajectory = prepareTrajectory(points, currentPointerType);
-    const sequence = resample(preparedTrajectory, SEQ_LEN);
-    void runInference(sequence);
+    if (drawing || inferenceRunning || points.length < 20) return;
+    try {
+      const windows = preprocessV5Trial(points, { forcePressureProxy: currentPointerType === 'mouse' });
+      void runInference(windows);
+    } catch (error) {
+      classification.textContent = 'Unable to preprocess'; classification.className = 'result-state error';
+      resultCopy.textContent = error && error.message ? error.message : 'Could not preprocess this stroke.';
+      liveStatus.textContent = 'V5 preprocessing failed. Draw a longer, continuous path and try again.';
+      liveStatus.classList.add('error');
+    }
   });
   pdPresetBtn.addEventListener('click', () => runPreset(PRESET_PARKINSON, 'PD-style', true));
   hcPresetBtn.addEventListener('click', () => runPreset(PRESET_HEALTHY, 'Healthy-style', false));
