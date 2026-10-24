@@ -83,6 +83,7 @@ async function uploadTaskTrajectory(services, session, task) {
   });
   task.trajectory = null;
   task.trajectory_storage_path = path;
+  task.trajectory_storage_url = `gs://${firebaseConfig.storageBucket}/${path}`;
   task.trajectory_format = 'json';
 }
 

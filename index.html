@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101b2a">
+  <meta name="description" content="NeuroTrace V5 browser-based research prototype. Not a diagnostic tool.">
+  <meta property="og:title" content="NeuroTrace — Motor Signal Research">
+  <meta property="og:description" content="Explore the V5 inference demo or the consent-based V6 research collection. Not a medical diagnosis.">
+  <meta property="og:type" content="website">
   <title>NeuroTrace | Handwriting Signal Analysis</title>
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
   <style>
@@ -17,6 +21,7 @@
     h1,h2,p { margin:0; } h1 {font-size:18px;letter-spacing:.015em;} .eyebrow { color:var(--muted);font-size:12px;letter-spacing:.1em;text-transform:uppercase; }
     .badge { border:1px solid var(--line);border-radius:999px;padding:7px 11px;color:#b8c8d7;font-size:12px;white-space:nowrap; }
     .intro { margin-bottom:22px; } .intro h2 { font-size:clamp(25px,4vw,34px); letter-spacing:-.03em;margin-bottom:7px; } .intro p {color:var(--muted);max-width:700px;}
+    .platform-links {display:flex;flex-wrap:wrap;gap:10px;margin-top:15px}.platform-links a{display:inline-flex;align-items:center;min-height:40px;padding:8px 12px;border:1px solid #36576a;border-radius:9px;color:#bcece5;background:#11242d;text-decoration:none;font-size:12px;font-weight:650}.platform-links a:hover{background:#1a3540}
     .grid { display:grid;grid-template-columns:minmax(0,1.55fr) minmax(280px,.85fr);gap:18px;align-items:stretch; }
     .card { background:linear-gradient(145deg,rgba(21,36,52,.97),rgba(15,27,41,.97));border:1px solid var(--line);border-radius:18px;overflow:hidden; }
     .card-head { height:64px;min-height:64px;flex:0 0 64px;padding:10px 18px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(36,53,71,.7); }
@@ -76,6 +81,7 @@
     <section class="intro">
       <h2>Handwriting signal analysis</h2>
       <p>Draw a continuous spiral or free-form line in the canvas, then analyze its motion signal with the NeuroTrace V5 model.</p>
+      <nav class="platform-links" aria-label="NeuroTrace research pages"><a href="collect.html">V6 consent-based six-task collection</a><a href="dashboard.html">V6 aggregate research dashboard</a><a href="privacy.html">Privacy policy</a><a href="terms.html">Terms of service</a></nav>
     </section>
     <div class="grid">
       <section class="card" aria-labelledby="drawTitle">

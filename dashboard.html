@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Public aggregate statistics for the NeuroTrace V6 research project. No individual records are shown."><meta property="og:title" content="NeuroTrace V6 Research Dashboard"><meta property="og:description" content="Coarse, disclosure-reviewed aggregate research statistics. Not a medical diagnosis."><meta property="og:type" content="website"><meta name="robots" content="noindex"><title>Research dashboard — NeuroTrace V6</title>
+<style>:root{color-scheme:dark;--bg:#09111c;--panel:#111d2b;--line:#2c4054;--text:#e8f0f7;--muted:#b3c1cf;--accent:#76e2d3}*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#112234 0%,var(--bg) 65%);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}.wrap{width:min(100% - 28px,1100px);margin:auto;padding:24px 0 50px}a{color:var(--accent)}header nav{display:flex;flex-wrap:wrap;gap:12px}header h1{margin:18px 0 6px;font-size:clamp(26px,5vw,38px)}.panel{margin:15px 0;padding:20px;border:1px solid var(--line);border-radius:15px;background:var(--panel)}.muted{color:var(--muted)}.notice{padding:12px;border-left:3px solid #dda866;background:#292119;color:#ffe1b5}.total{font-size:42px;font-weight:750;color:var(--accent)}.charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}.chart-card{min-height:310px;padding:16px;border:1px solid var(--line);border-radius:12px;background:#0c1723}.chart-wrap{position:relative;height:245px}.country-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:12px}.country-item{display:flex;justify-content:space-between;gap:12px;padding:9px;border:1px solid var(--line);border-radius:8px;color:var(--muted)}.status{min-height:52px;color:var(--muted)}.spinner{display:inline-block;width:16px;height:16px;border:2px solid #8299ac;border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:680px){.charts{grid-template-columns:1fr}.chart-card{min-height:280px}.chart-wrap{height:220px}}@media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script></head>
+<body><main class="wrap"><header><nav aria-label="Main navigation"><a href="collect.html">V6 collection</a><a href="index.html">V5 inference demo</a><a href="privacy.html">Privacy Policy</a><a href="terms.html">Terms</a></nav><h1>NeuroTrace V6 research dashboard</h1><p class="muted">Public, coarse aggregate counts from a separate published statistics document. This page never queries individual research sessions.</p></header>
+<section class="panel notice"><strong>Research transparency, not clinical evidence.</strong> Counts may be delayed and are not a representative clinical sample. Small cells (fewer than five) must be suppressed by the publishing process. Do not infer an individual's health from these aggregates.</section>
+<p id="dashboardStatus" class="status" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span> Loading public research aggregates…</p>
+<section id="stats" hidden>
+  <article class="panel"><h2>Total sessions collected</h2><div id="totalSessions" class="total">—</div><p id="updatedAt" class="muted">Aggregate not yet updated</p></article>
+  <div class="charts">
+    <article class="chart-card"><h2>Sessions by self-reported device</h2><div class="chart-wrap"><canvas id="deviceChart" aria-label="Sessions by self-reported device" role="img"></canvas></div></article>
+    <article class="chart-card"><h2>Sessions by self-reported health status</h2><div class="chart-wrap"><canvas id="healthChart" aria-label="Sessions by self-reported health status" role="img"></canvas></div></article>
+    <article class="chart-card"><h2>Submissions over the last seven days</h2><div class="chart-wrap"><canvas id="trendChart" aria-label="Submission trend for the last seven days" role="img"></canvas></div></article>
+    <article class="chart-card"><h2>Country-level distribution</h2><p class="muted">Country is self-reported; no precise location is collected.</p><div id="countryList" class="country-list"></div></article>
+  </div>
+</section>
+<noscript><p class="panel">JavaScript is required to fetch the disclosure-reviewed aggregate document. No individual data is shown here.</p></noscript>
+</main><script type="module">
+import { getPublicStats, isFirebaseConfigured } from './src/firebase_client.js';
+const status = document.getElementById('dashboardStatus');
+const countOnly = input => Object.fromEntries(Object.entries(input || {}).filter(([, value]) => Number.isFinite(Number(value)) && Number(value) >= 5).map(([key, value]) => [key, Number(value)]));
+function renderDoughnut(id, data, labels) {
+  const entries = Object.entries(countOnly(data));
+  if (!entries.length || !window.Chart) return;
+  new Chart(document.getElementById(id), { type: 'doughnut', data: { labels: entries.map(([key]) => labels?.[key] || key), datasets: [{ data: entries.map(([, value]) => value), backgroundColor: ['#76e2d3','#79a9ff','#ffbd75','#d997f4','#fe8f91','#a9c87b','#74c9dc','#d8d08b'] }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#e8f0f7' } } } } });
+}
+function renderTrend(rows) {
+  if (!Array.isArray(rows) || !window.Chart) return;
+  const days = [...rows].slice(-7);
+  new Chart(document.getElementById('trendChart'), { type: 'line', data: { labels: days.map(item => item.date), datasets: [{ label: 'Sessions', data: days.map(item => Number(item.count) >= 5 ? Number(item.count) : null), borderColor: '#76e2d3', backgroundColor: '#76e2d344', tension: .2, spanGaps: false }] }, options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: '#b3c1cf' }, grid: { color: '#2c4054' } }, y: { beginAtZero: true, ticks: { color: '#b3c1cf', precision: 0 }, grid: { color: '#2c4054' } } }, plugins: { legend: { labels: { color: '#e8f0f7' } } } } });
+}
+function renderCountries(input) {
+  const entries = Array.isArray(input) ? input.map(item => [item.country, Number(item.count)]) : Object.entries(input || {}).map(([country, value]) => [country, Number(value)]);
+  const visible = entries.filter(([country, count]) => typeof country === 'string' && Number.isFinite(count) && count >= 5).sort((a, b) => b[1] - a[1]);
+  const node = document.getElementById('countryList');
+  node.replaceChildren();
+  if (!visible.length) { node.textContent = 'No disclosure-safe country aggregates are available yet.'; return; }
+  for (const [country, count] of visible) {
+    const row = document.createElement('div'); row.className = 'country-item';
+    const name = document.createElement('span'); name.textContent = country;
+    const value = document.createElement('strong'); value.textContent = String(count);
+    row.append(name, value); node.append(row);
+  }
+}
+async function initializeDashboard() {
+  if (!isFirebaseConfigured()) { status.textContent = 'Dashboard offline: Firebase is not configured. No data was uploaded by this page.'; return; }
+  try {
+    const stats = await getPublicStats();
+    if (!stats) { status.textContent = 'No public aggregate has been published yet. Individual sessions are not queried.'; return; }
+    document.getElementById('totalSessions').textContent = Number.isFinite(Number(stats.total_sessions)) ? Number(stats.total_sessions).toLocaleString() : '—';
+    document.getElementById('updatedAt').textContent = stats.updated_at ? `Aggregate updated: ${new Date(stats.updated_at.toDate?.() || stats.updated_at).toLocaleString()}` : 'Update time not supplied';
+    renderDoughnut('deviceChart', stats.device_type_counts);
+    renderDoughnut('healthChart', stats.health_status_counts);
+    renderTrend(stats.daily_submissions);
+    renderCountries(stats.country_counts);
+    document.getElementById('stats').hidden = false;
+    status.textContent = 'Aggregate statistics loaded.';
+  } catch (error) { status.textContent = `Public aggregate could not be loaded: ${error.message || 'network or security-rule error'}.`; }
+}
+initializeDashboard();
+</script></body></html>

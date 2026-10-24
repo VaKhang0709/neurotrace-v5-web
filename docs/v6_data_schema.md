@@ -147,11 +147,11 @@ Each non-skipped task runs the existing V5 preprocessing/model path when the sig
 
 `v6_trajectories/{anonymous_auth_uid}/{session_id}/{task_id}.json`
 
-The Firestore task retains `trajectory: null`, `trajectory_storage_path`, and `trajectory_format: "json"`. The client deliberately does not create public download URLs. Storage uploads are idempotent at the deterministic path; a failed Firestore write can leave a private orphan object, which an administrative cleanup job should reconcile. Storage rule maximum object size is 10 MiB; larger sessions remain queued and fail visibly for operator review.
+The Firestore task retains `trajectory: null`, `trajectory_storage_path`, a private `trajectory_storage_url` in `gs://bucket/path` form, and `trajectory_format: "json"`. The URI is resolved by an authenticated Firebase Storage SDK client; the client deliberately does not create public bearer download URLs. Storage uploads are idempotent at the deterministic path; a failed Firestore write can leave a private orphan object, which an administrative cleanup job should reconcile. Storage rule maximum object size is 10 MiB; larger sessions remain queued and fail visibly for operator review.
 
 ## Local queue, deletion, and retention
 
-The consent record and completed session are separately stored in IndexedDB outbox items and synchronized in consent-first order with capped exponential backoff. Session writes use `setDoc` with stable document IDs for retry idempotency. Browser storage is not a guaranteed encrypted backup and can be evicted or cleared. Participants may clear unsent items in the UI; deleting already synchronized data requires the configured research privacy contact and a verified administrative deletion workflow. Intended research retention is five years; the operator, not the static browser app, must enforce it.
+The consent record and completed session are separately stored in IndexedDB outbox items and synchronized in consent-first order with capped exponential backoff. Session writes use `setDoc` with stable document IDs for retry idempotency. Browser storage is not a guaranteed encrypted backup and can be evicted or cleared. Participants may clear unsent items in the UI; deleting already synchronized data requires the configured research privacy contact and a verified administrative deletion workflow. No research retention period is set by this repository. The operator must publish and enforce a reviewed retention schedule before participant recruitment; the static browser app does not perform automatic deletion.
 
 ## Access control and deployment requirements
 
