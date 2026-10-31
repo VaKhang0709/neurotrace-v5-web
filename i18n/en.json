@@ -141,5 +141,19 @@
   "consentAccept": "I agree and continue",
   "leaveCollection": "Leave collection",
   "preparingConsent": "Preparing local consent and identity records…",
-  "taskSkippedStatus": "Task saved locally and marked as skipped."
+  "taskSkippedStatus": "Task saved locally and marked as skipped.",
+  "v6AssessmentHeading": "TremorFormer V6 research estimate",
+  "v6AssessmentDisclaimer": "Research-only model output; not a diagnosis or a substitute for clinical assessment. The training contract is Wacom-focused and cross-device performance is not independently validated.",
+  "v6AssessmentLoading": "Calculating the V6 research estimate…",
+  "v6AssessmentUnavailable": "V6 estimate unavailable. The drawing session can still be submitted without a model result.",
+  "v6RawRisk": "Raw model probability",
+  "v6CalibratedRisk": "Validation-calibrated subject score",
+  "v6TaskBreakdown": "Task-by-task model output",
+  "v6Skipped": "Skipped",
+  "v6Insufficient": "Insufficient signal",
+  "v6Domain": "Input device domain",
+  "v6DomainConfidenceUnavailable": "Domain confidence is not emitted by this ONNX model; this is not a confidence or diagnosis score.",
+  "v6CalibrationWarning": "Calibration was selected on a small validation set and may overfit; it is not independently validated.",
+  "v6NoScoredTasks": "No task produced enough valid signal for V6 inference.",
+  "v6ScoredTasks": "{count} task(s) scored."
 }

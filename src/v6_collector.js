@@ -2,6 +2,7 @@ import { preprocessV5Trial, standardizeV5Window } from '../preprocess_v5.js';
 import { consentVersion } from '../config/firebase_config.js';
 import { initializeAnalyticsAfterConsent, isCollectionConfigured, storeConsent, storeSession } from './firebase_client.js';
 import * as localStore from './local_store.js';
+import { runV6Assessment } from './utils/onnx_inference.js';
 
 const TASK_IDS = ['archimedes_spiral', 'static_spiral_trace', 'straight_line', 'sine_wave', 'free_handwriting', 'rapid_circles'];
 const TASK_TITLE_KEYS = ['task1Title', 'task2Title', 'task3Title', 'task4Title', 'task5Title', 'task6Title'];
@@ -26,6 +27,7 @@ const taskStates = TASK_IDS.map(task_id => ({
   ended_at_us: null,
   duration_ms: 0,
   v5_inference_result: { probability: null, classification: 'unavailable' },
+  v6_inference_result: null,
   completed: false,
   skipped: false
 }));
@@ -56,6 +58,9 @@ let lastPointerType = 'unknown';
 let modelSessionPromise;
 let scalerPromise;
 let ortRuntime = null;
+let v6InferenceResult = null;
+let v6AssessmentPromise = null;
+let v6AssessmentRunId = 0;
 
 function secureUuidV4() {
   const cryptoApi = globalThis.crypto;
@@ -413,6 +418,9 @@ function resetCurrentTask() {
   state.ended_at_us = null;
   state.duration_ms = 0;
   state.v5_inference_result = { probability: null, classification: 'unavailable' };
+  state.v6_inference_result = null;
+  v6InferenceResult = null;
+  v6AssessmentPromise = null;
   state.completed = false;
   state.skipped = false;
   const stage = canvasElements[activeTaskIndex].parentElement;
@@ -563,8 +571,10 @@ function createDraftSnapshot() {
       duration_ms: task.duration_ms,
       completed: task.completed,
       skipped: task.skipped,
-      v5_inference_result: task.v5_inference_result
+      v5_inference_result: task.v5_inference_result,
+      v6_inference_result: task.v6_inference_result
     })),
+    v6_inference_result: v6InferenceResult,
     current_index: activeTaskIndex,
     updated_at: new Date().toISOString()
   };
@@ -654,6 +664,85 @@ async function inferTask(task) {
   }
 }
 
+function formatModelProbability(value) {
+  return Number.isFinite(value) ? `${value.toFixed(4)} (${(value * 100).toFixed(2)}%)` : '—';
+}
+
+function renderV6Assessment(result, error = null) {
+  const raw = $('v6RawProbability');
+  const calibrated = $('v6CalibratedProbability');
+  const status = $('v6AssessmentStatus');
+  const breakdown = $('v6TaskBreakdown');
+  const domain = $('v6DeviceDomain');
+  const warning = $('v6CalibrationWarning');
+  raw.textContent = formatModelProbability(result?.raw_probability);
+  calibrated.textContent = formatModelProbability(result?.calibrated_probability);
+  domain.textContent = result?.device_domain ? `${result.device_domain} (device_id ${result.device_id})` : 'unknown';
+  $('v6DomainConfidence').textContent = getElementText('v6DomainConfidenceUnavailable');
+  status.textContent = error
+    ? `${getElementText('v6AssessmentUnavailable')} ${error.message || ''}`
+    : result?.scored_task_count
+      ? getElementText('v6ScoredTasks').replace('{count}', String(result.scored_task_count))
+      : getElementText('v6NoScoredTasks');
+  warning.hidden = !result?.calibration_warning;
+  warning.textContent = result?.calibration_warning ? getElementText('v6CalibrationWarning') : '';
+  breakdown.replaceChildren();
+  for (const [index, task] of (result?.task_results || []).entries()) {
+    const item = document.createElement('li');
+    const title = getElementText(TASK_TITLE_KEYS[index], task.task_id);
+    const score = Number.isFinite(task.probability)
+      ? formatModelProbability(task.probability)
+      : task.skipped ? getElementText('v6Skipped') : getElementText('v6Insufficient');
+    item.textContent = `${title}: ${score}`;
+    breakdown.append(item);
+  }
+}
+
+function refreshV6Assessment(deviceSelfReported = $('selfDevice')?.value || null) {
+  const runId = ++v6AssessmentRunId;
+  $('v6AssessmentStatus').textContent = getElementText('v6AssessmentLoading');
+  $('v6RawProbability').textContent = '—';
+  $('v6CalibratedProbability').textContent = '—';
+  v6AssessmentPromise = runV6Assessment(taskStates, {
+    runtime: globalThis.window?.ort,
+    deviceSelfReported
+  }).then(result => {
+    if (runId !== v6AssessmentRunId) return result;
+    v6InferenceResult = result;
+    const byId = new Map(result.task_results.map(task => [task.task_id, task]));
+    for (const state of taskStates) state.v6_inference_result = byId.get(state.task_id) || null;
+    renderV6Assessment(result);
+    scheduleDraftSave(true);
+    return result;
+  }).catch(error => {
+    if (runId !== v6AssessmentRunId) return null;
+    v6InferenceResult = {
+      model_version: 'neurotrace_v6_tremorformer',
+      feature_contract: 'v6-dwt19-v1',
+      raw_probability: null,
+      calibrated_probability: null,
+      scored_task_count: 0,
+      task_results: taskStates.map(task => ({ task_id: task.task_id, skipped: task.skipped, probability: null, status: 'unavailable' })),
+      device_self_reported: deviceSelfReported || null,
+      domain_confidence: null,
+      unavailable_reason: String(error?.message || error)
+    };
+    for (const state of taskStates) state.v6_inference_result = v6InferenceResult.task_results.find(item => item.task_id === state.task_id) || null;
+    renderV6Assessment(v6InferenceResult, error);
+    scheduleDraftSave(true);
+    return v6InferenceResult;
+  });
+  return v6AssessmentPromise;
+}
+
+function showFeedbackAfterTasks() {
+  $('protocol').hidden = true;
+  $('feedback').hidden = false;
+  $('v6AssessmentCard').hidden = false;
+  $('feedback').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  void refreshV6Assessment('');
+}
+
 async function finishCurrentTask() {
   if (pointerActive || inferencePending) return;
   const task = taskStates[activeTaskIndex];
@@ -673,9 +762,7 @@ async function finishCurrentTask() {
   $('captureStatus').textContent = getElementText('taskSaved');
   scheduleDraftSave(true);
   if (taskStates.every(item => item.completed || item.skipped)) {
-    $('protocol').hidden = true;
-    $('feedback').hidden = false;
-    $('feedback').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    showFeedbackAfterTasks();
   } else {
     const next = taskStates.findIndex(item => !item.completed && !item.skipped);
     showTask(next >= 0 ? next : Math.min(activeTaskIndex + 1, 5));
@@ -694,6 +781,9 @@ function skipCurrentTask() {
   state.started_at_us = null;
   state.ended_at_us = null;
   state.v5_inference_result = { probability: null, classification: 'unavailable' };
+  state.v6_inference_result = null;
+  v6InferenceResult = null;
+  v6AssessmentPromise = null;
   state.completed = true;
   state.skipped = true;
   const stage = canvasElements[activeTaskIndex].parentElement;
@@ -703,9 +793,7 @@ function skipCurrentTask() {
   scheduleDraftSave(true);
   $('captureStatus').textContent = getElementText('taskSkippedStatus');
   if (taskStates.every(item => item.completed || item.skipped)) {
-    $('protocol').hidden = true;
-    $('feedback').hidden = false;
-    $('feedback').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    showFeedbackAfterTasks();
   } else showTask(taskStates.findIndex(item => !item.completed && !item.skipped));
   updateTaskUi();
 }
@@ -719,6 +807,7 @@ function buildTaskPayload(task) {
     trajectory: task.trajectory,
     canvas_size: task.canvas_size || { w: 0, h: 0 },
     v5_inference_result: task.v5_inference_result,
+    v6_inference_result: task.v6_inference_result,
     skipped: task.skipped
   };
 }
@@ -743,9 +832,12 @@ function buildSessionPayload(demographics) {
       hasTouch: touchCapability > 0,
       hasStylus,
       maxTouchPoints: touchCapability,
-      estimated_sampling_rate_hz: estimateSampleRate(taskStates)
+      estimated_sampling_rate_hz: estimateSampleRate(taskStates),
+      v6_device_domain: v6InferenceResult?.device_domain || null,
+      v6_device_id: Number.isInteger(v6InferenceResult?.device_id) ? v6InferenceResult.device_id : null
     },
     tasks,
+    v6_inference_result: v6InferenceResult,
     client_created_at: new Date().toISOString(),
     schema_version: 'v6.0'
   };
@@ -830,6 +922,7 @@ function createTaskNavAndFormBehavior() {
     submitButton.innerHTML = `<span class="spinner" aria-hidden="true"></span>${getElementText('submitting')}`;
     $('submissionStatus').textContent = '';
     try {
+      if (v6AssessmentPromise) await v6AssessmentPromise;
       const payload = buildSessionPayload(readFeedbackForm());
       await draftWriteQueue;
       await localStore.saveDraft(createDraftSnapshot());
@@ -852,6 +945,9 @@ function createTaskNavAndFormBehavior() {
     }
   });
   $('fatigue').addEventListener('input', () => { $('fatigueValue').value = $('fatigue').value; $('fatigueValue').textContent = $('fatigue').value; });
+  $('selfDevice').addEventListener('change', () => {
+    if (taskStates.every(task => task.completed || task.skipped)) void refreshV6Assessment($('selfDevice').value || '');
+  });
   $('backToTasks').addEventListener('click', () => showTask(Math.max(0, taskStates.findIndex(task => !task.completed && !task.skipped))));
   $('nextTask').addEventListener('click', () => { void finishCurrentTask(); });
   $('skipTask').addEventListener('click', skipCurrentTask);
@@ -902,6 +998,7 @@ function showFirstTask() {
 function applyDraft(draft) {
   if (!draft || !Array.isArray(draft.tasks) || draft.tasks.length !== 6) throw new Error('Saved session draft is incomplete.');
   currentDraft = draft;
+  v6InferenceResult = draft.v6_inference_result || null;
   sessionMetadata = { ...sessionMetadata, resumed_from_session_id: draft.session_id, resumed_at: new Date().toISOString() };
   // Keep this page-load UUID and the fresh consent; the unfinished local trajectories are rebased into this session.
   activeTaskIndex = Number.isInteger(draft.current_index) ? Math.max(0, Math.min(5, draft.current_index)) : 0;
@@ -917,6 +1014,7 @@ function applyDraft(draft) {
     state.pointer_types = new Set(state.trajectory.map(row => row[7]).filter(Boolean));
     state.active_stroke_index = state.trajectory.reduce((max, row) => Math.max(max, Number(row[13] ?? 0)), -1);
     state.v5_inference_result = saved.v5_inference_result || { probability: null, classification: 'unavailable' };
+    state.v6_inference_result = saved.v6_inference_result || null;
     if (state.canvas_size) {
       const stage = canvasElements[index].parentElement;
       stage.style.width = `${state.canvas_size.w}px`;

@@ -12,7 +12,9 @@
 
 ## Browser modules
 
-- `src/v6_collector.js` owns the consent flow, UUID/fingerprint generation, task protocol, per-task pointer capture, V5 task scoring, feedback validation, draft recovery, offline queueing, retry scheduler, locale switch, and accessibility controls.
+- `src/v6_collector.js` owns the consent flow, UUID/fingerprint generation, task protocol, per-task pointer capture, V5 scoring, V6 whole-protocol scoring, feedback validation, draft recovery, offline queueing, retry scheduler, locale switch, and accessibility controls.
+- `src/utils/v6_feature_extractor.js` implements the scaler-declared 19-channel `v6-dwt19-v1` order, 100 Hz resampling, per-device Butterworth filter, kinematic derivatives, db4 details, and per-window normalization.
+- `src/utils/onnx_inference.js` loads the V6 ONNX/scaler pair, sends dynamic `trajectory [1,19,T]` and `device_id [1]` tensors, and returns raw task scores plus an optional session-level validation-calibrated score.
 - `src/local_store.js` wraps IndexedDB stores `outbox` and `drafts`. Consent and completed sessions are saved locally before synchronization. Draft snapshots are written periodically during capture and at task transitions.
 - `src/firebase_client.js` lazily imports Firebase JS SDK 10.14.1 modular packages from Google-hosted ES modules. It initializes Auth anonymously, Firestore, Storage, and (only after consent) Analytics. It uses private Storage paths for large trajectories and never creates a public object URL.
 - `preprocess_v5.js` remains the shared V5 preprocessing path. Each completed non-skipped task is passed through it for optional drift-analysis inference. The threshold remains the configured 0.50; V5 aggregation is arithmetic mean of per-window probabilities.
@@ -26,7 +28,8 @@
 4. Each of six task canvases records raw PointerEvents immediately, including coalesced events where available. Rendering uses `requestAnimationFrame`; capture is not throttled. Pressure is `null` for mouse or when native pressure is unavailable. Stroke segment, pointer type/id, button state, tilt, twist, contact dimensions, and primary state are preserved in tuple columns.
 5. Task drafts are saved to local IndexedDB. On reload, an unfinished draft may be resumed after fresh consent; its unsubmitted trajectories are rebased into the new page-load session id and the origin draft id is kept in metadata.
 6. After all tasks are complete or skipped and the survey validates, the participant's completed session is queued. The sync loop writes consent first, then session. Network failures preserve the queue and retry with capped exponential backoff.
-7. Each task may include the existing V5 inference probability and positive/negative/unavailable output. These are model outputs only, not clinical labels.
+7. Each completed task retains its existing V5 output and a V6 per-task raw sigmoid probability where enough signal is available. After all six tasks are completed or skipped, V6 returns a task-by-task breakdown and the mean raw probability across scored tasks; the optional isotonic calibration is applied only to that session-level mean, as declared by the scaler. The V6 result and device-embedding metadata are included in the local session payload and synchronized to `v6_sessions` after consent. These are research model outputs, not clinical labels.
+8. The shipped graph accepts two inputs: `trajectory` (`float32 [batch,19,time]`, 64–512 samples in the frontend) and `device_id` (`int64 [batch]`), and emits only `logits`. The model does not have a domain-confidence output; the UI explicitly reports that metric as unavailable. The scaler warns that its small validation-set calibration may overfit and marks clinical validation `NOT_ESTABLISHED`.
 
 ## Firebase boundary and dashboard data
 
@@ -42,6 +45,8 @@ The default empty config displays **Data collection offline**. When Firebase and
 - Firebase Analytics initializes only after the consent flow, and the application sends no trajectory or survey values as Analytics parameters. The operator must review SDK defaults, consent language, data residency, and provider terms before deployment.
 - The country field is self-reported. No GPS lookup or precise geographic data is requested.
 - The canvas 10 cm line is only a CSS-pixel approximation and is not physically calibrated. Touch, mouse, and stylus domains are not equivalent.
+- The V6 scaler/model pair was exported without AI Core reference feature tensors or its canonical frontend feature-extraction source. The client contract-checks exact channel names/order and the shipped ONNX tensor dimensions, but parity of browser wavelet boundaries, azimuth derivation, and device resampling against the training pipeline remains unverified; obtain a reference tensor fixture before participant-facing use.
+- The ONNX export emits one logit and has no domain-confidence head. `domain_confidence` is null; the device embedding ID is not a confidence value.
 - The UI and Firebase rules require independent accessibility, security, legal, privacy, research-protocol, and mobile-device testing. The privacy/terms pages intentionally block claims of compliance until controller/contact/configuration are provided.
 
 ## Validation performed in this repository

@@ -141,5 +141,19 @@
   "consentAccept": "Tôi đồng ý và tiếp tục",
   "leaveCollection": "Rời khỏi trang thu thập",
   "preparingConsent": "Đang chuẩn bị hồ sơ đồng ý và định danh cục bộ…",
-  "taskSkippedStatus": "Nhiệm vụ đã lưu cục bộ và được đánh dấu bỏ qua."
+  "taskSkippedStatus": "Nhiệm vụ đã lưu cục bộ và được đánh dấu bỏ qua.",
+  "v6AssessmentHeading": "Ước lượng nghiên cứu TremorFormer V6",
+  "v6AssessmentDisclaimer": "Kết quả mô hình chỉ phục vụ nghiên cứu; không phải chẩn đoán hay thay thế đánh giá lâm sàng. Hợp đồng huấn luyện tập trung vào Wacom; hiệu năng trên thiết bị khác chưa được xác thực độc lập.",
+  "v6AssessmentLoading": "Đang tính ước lượng nghiên cứu V6…",
+  "v6AssessmentUnavailable": "Không thể tạo ước lượng V6. Bạn vẫn có thể gửi phiên vẽ mà không kèm kết quả mô hình.",
+  "v6RawRisk": "Xác suất thô của mô hình",
+  "v6CalibratedRisk": "Điểm cấp phiên đã hiệu chỉnh theo tập xác thực",
+  "v6TaskBreakdown": "Kết quả mô hình theo từng nhiệm vụ",
+  "v6Skipped": "Đã bỏ qua",
+  "v6Insufficient": "Tín hiệu chưa đủ",
+  "v6Domain": "Miền thiết bị đầu vào",
+  "v6DomainConfidenceUnavailable": "Mô hình ONNX này không xuất độ tin cậy miền; đây không phải điểm độ tin cậy hay chẩn đoán.",
+  "v6CalibrationWarning": "Hiệu chỉnh được chọn trên tập xác thực nhỏ và có thể bị quá khớp; chưa được xác thực độc lập.",
+  "v6NoScoredTasks": "Không có nhiệm vụ nào đủ tín hiệu hợp lệ để suy luận V6.",
+  "v6ScoredTasks": "Đã chấm điểm {count} nhiệm vụ."
 }

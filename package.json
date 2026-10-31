@@ -1,0 +1,12 @@
+{
+  "name": "neurotrace-v5-v6-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "build": "node scripts/build-check.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

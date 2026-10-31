@@ -32,7 +32,7 @@ service cloud.firestore {
       allow create: if ownsNewRecord()
         && request.resource.data.keys().hasOnly([
           'session_id', 'device_uuid', 'device_fingerprint_hash', 'consent_id',
-          'session_metadata', 'demographics', 'device_info', 'tasks',
+          'session_metadata', 'demographics', 'device_info', 'tasks', 'v6_inference_result',
           'created_at', 'client_created_at', 'schema_version', 'owner_uid'
         ])
         && request.resource.data.session_id == sessionId

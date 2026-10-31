@@ -74,7 +74,9 @@ A document is queued locally only after all six tasks have a completed or skippe
     "hasTouch": true,
     "hasStylus": false,
     "maxTouchPoints": 5,
-    "estimated_sampling_rate_hz": 120.4
+    "estimated_sampling_rate_hz": 120.4,
+    "v6_device_domain": "mouse",
+    "v6_device_id": 2
   },
   "tasks": [
     {
@@ -85,9 +87,22 @@ A document is queued locally only after all six tasks have a completed or skippe
       "trajectory": [[12.25, 34.5, 2384912, null, null, null, null, "mouse", 1, 1, 1, 1, true, 0]],
       "canvas_size": {"w": 840, "h": 360},
       "v5_inference_result": {"probability": 0.62, "classification": "positive"},
+      "v6_inference_result": {"probability": 0.51, "status": "complete", "window_probabilities": [0.49, 0.53]},
       "skipped": false
     }
   ],
+  "v6_inference_result": {
+    "model_version": "<scaler model version>",
+    "feature_contract": "v6-dwt19-v1",
+    "raw_probability": "<mean sigmoid probability across scored tasks>",
+    "calibrated_probability": "<validation-only subject-mean calibration; nullable>",
+    "threshold": 0.5,
+    "task_results": "<one result per task>",
+    "device_domain": "<wacom | touch | mouse | stylus | unknown>",
+    "device_id": "<training embedding id>",
+    "domain_confidence": null,
+    "domain_confidence_reason": "<the ONNX graph does not emit a domain-confidence head>"
+  },
   "client_created_at": "<client ISO-8601 timestamp>",
   "created_at": "<Firestore serverTimestamp>",
   "schema_version": "v6.0",
@@ -140,6 +155,14 @@ Every raw pointer sample is an ordered 14-value array. No smoothing, interpolati
 ## V5 inference fields
 
 Each non-skipped task runs the existing V5 preprocessing/model path when the signal has enough valid samples and the local ONNX runtime/model are available. `probability` is the arithmetic mean of per-window model probabilities (V5 model output activation followed by existing V5 aggregation); `classification` is `positive`, `negative`, or `unavailable`, using the configured 0.50 threshold. These are model outputs, not a patient label or diagnosis. No result is forced for skipped or failed tasks.
+
+## V6 TremorFormer inference contract
+
+The deployed scaler declares feature order for `v6-dwt19-v1`: `x`, `y`, `pressure`, `vx`, `vy`, `speed`, `ax`, `ay`, `acceleration`, `jerk`, `curvature`, `pressure_derivative`, `azimuth_derivative`, `wavelet_db4_l1` through `wavelet_db4_l5`, and `v5_proxy_p`. All 19 channels use per-window population z-score normalization with epsilon `1e-6`; the scaler's mean/std arrays are train-only diagnostics and are not applied again. Inputs are dynamic `[1,19,T]` float tensors plus a `[1]` `int64` `device_id` input, from 64 through 512 samples per window (512 reference length, stride 256). `device_id` uses the scaler's Wacom/touch/mouse/stylus/unknown lookup.
+
+Each scored task has a mean sigmoid probability over its valid windows; the session raw score is the arithmetic mean across scored tasks. The optional calibration is applied only to that subject-level mean, consistent with the scaler's `calibration_scope`. Raw and calibrated probabilities remain separately visible. The exported ONNX graph returns only `logits`, so `domain_confidence` is `null` with an explicit reason; the UI does not invent a confidence estimate. The scaler marks clinical validation as `NOT_ESTABLISHED` and warns that its small validation-set calibration may overfit.
+
+`src/utils/v6_feature_extractor.js` resamples each stroke independently at 100 Hz, applies the device-specific fourth-order Butterworth cutoff declared by the scaler, computes the listed 19 features, and extracts Daubechies-4 detail levels. LDJ and angular diagnostics are retained as engineering diagnostics, not injected into the fixed 19-channel model tensor because the exported scaler does not include an LDJ channel. Exact training-side feature parity still requires AI Core reference tensors; the notebook/export bundle provided the scaler and model but not a canonical feature-extractor source or parity vectors.
 
 ## Large trajectories and storage
 
