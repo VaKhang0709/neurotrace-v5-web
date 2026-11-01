@@ -1,5 +1,9 @@
 # TremorFormer V6 ONNX export
 
+## Production source synchronization
+
+Synchronized from Google Drive folder `NEUROTRACE/v6_production/` on 2026-11-01, per the Tech Lead's 50-epoch production designation. The Drive model's modified time is `2026-10-31T15:04:57Z`; the scaler's is `2026-10-31T15:05:16Z`. Their downloaded bytes are identical to the artifacts already in this branch (no model/scaler content delta). The scaler itself does not contain an epoch-count field, so the 50-epoch designation is source-owner provenance, not independently machine-verified here.
+
 - Model: `neurotrace_v6_tremorformer.onnx`
 - Scaler/feature contract: `scaler_config_v6.json`
 - Contract: `v6-dwt19-v1`
