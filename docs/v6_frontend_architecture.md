@@ -52,3 +52,12 @@ The default empty config displays **Data collection offline**. When Firebase and
 ## Validation performed in this repository
 
 Static JavaScript syntax and JSON checks, source/HTML ID checks, mock UI-flow checks where available, and exact numeric parity of V5 preprocessing against the pre-V6 branch were run. A browser-based Firebase emulator, real Firebase submission, visual breakpoint suite, assistive-technology audit, legal review, and high-volume pointer performance test were not run. No sample data was uploaded.
+
+
+## V6 model family (v6-family-1)
+
+Automatic online client inference selects the BASE FP16 artifact for each drawing task. Browser offline status, slow network hints (2G/3G, low downlink, high RTT), or the explicit NANO mode selects the NANO INT8 artifact. The tier selector can force BASE while online. Model hashes are verified before ONNX Runtime receives the bytes; CacheStorage is used when available, and live sessions are retained in memory. PRO FP32 is server-side only and rejected by the client loader.
+
+An optional explicit checkbox is required before `v6_server_reevaluation` is attached to a consented session. That field is a request/status marker only; no server-side PRO inference worker is implemented in this repository. The survey requires tremor status (`yes`, `no`, or `prefer_not_to_say`) before queueing or Firestore submission.
+
+The family uses only raw sigmoid scores (no shared teacher calibration) at the fixed 0.50 threshold. The supplied 15-subject Wacom release-acceptance holdout is not untouched final validation and reports 0.00 specificity at that threshold for each tier. The interface is research-only and does not imply clinical validity.

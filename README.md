@@ -34,13 +34,13 @@ The collector is an adult-only, consent-based research interface and not a medic
 
 - `collect.html`: four-check consent modal, six independent canvas tasks, validated adult participant feedback form, resumable local drafts, local outbox, exponential retry, English/Vietnamese UI, high-contrast mode, skip/redo controls.
 - `src/v6_collector.js`: raw pointer capture, session metadata, identity/fingerprint, V5/V6 per-task inference, form checks and sync coordinator.
-- `src/utils/v6_feature_extractor.js` and `src/utils/onnx_inference.js`: contract-checked `v6-dwt19-v1` 19-channel feature extraction, dynamic ONNX inference (trajectory tensor plus device embedding), task breakdown, raw/session-calibrated score reporting.
-- `public/models/v6/`: AI Core's TremorFormer V6 ONNX export and matching scaler contract; served at `/models/v6/` by the repository-root static preview alias.
+- `src/utils/v6_feature_extractor.js` and `src/utils/onnx_inference.js`: exact `v6-dwt19-v1` 19-channel feature contract, integrity-checked dynamic inference, adaptive NANO/BASE selection, and tier/task metadata.
+- `public/models/v6/`: NANO (INT8), BASE (FP16), PRO (FP32), plus their shared scaler contract; served at `/models/v6/`. Online automatic inference uses BASE; offline/low-bandwidth uses NANO. Client code never loads PRO.
 - `src/local_store.js`: IndexedDB outbox/draft access. Clearing local pending data cannot delete previously synchronized records.
 - `src/firebase_client.js`: lazy Firebase modular SDK access, anonymous Auth, Firestore, Storage, Analytics after consent, aggregate-only dashboard reads.
 - `config/firebase_config.js`: empty deployment placeholders; never commit real values.
 - `firestore.rules`, `storage.rules`: deny-by-default starter rules. They require independent staging validation; they are not a substitute for a security review.
-- `docs/v6_data_schema.md`: Firestore, Storage, consent and trajectory contracts for the AI Core team.
+- `docs/v6_data_schema.md`: Firestore, Storage, consent and trajectory contracts, including required tremor status and optional explicit PRO re-evaluation consent.
 - `docs/v6_frontend_architecture.md`: one-page architecture, production gates and known limitations.
 
 See [Privacy Policy](privacy.html), [Terms of Service](terms.html), and the [aggregate dashboard](dashboard.html). No fixed retention period is set in this repository; the research controller must publish and enforce one before participant recruitment. Do not use any V5/V6 output for health decisions.
@@ -55,9 +55,9 @@ python3 -m http.server 8000
 
 Required V5 files in the repository root are `index.html`, `preprocess_v5.js`, `neurotrace_v5.onnx`, and `scaler_config_v5.json`. ONNX Runtime Web loads from jsDelivr. The V6 collector also imports local ES modules and translation JSON files; its cloud features require the deployment Firebase setup above.
 
-V5 remains on its original root model/scaler and `[1, 5, 256]` pipeline. V6 uses `public/models/v6/neurotrace_v6_tremorformer.onnx` plus `scaler_config_v6.json`, contract `v6-dwt19-v1`, input `trajectory: float32 [batch,19,time]` and `device_id: int64 [batch]`, and raw `logits`. The V6 task score is mean sigmoid probability over dynamic windows; the session score also exposes the optional validation-set calibrated value. The fixed 0.50 threshold is retained in the result for audit, but the UI does not force Parkinson's/healthy labels or suppress raw score patterns. The export emits no domain-confidence output, so the UI reports domain confidence as unavailable instead of manufacturing it. Calibration is based on a small validation set, may overfit, and is not independently validated. The exported model/scaler bundle did not include AI Core reference feature tensors or canonical frontend code; channel order is checked, but preprocessing parity (especially DWT edge handling and angle derivation) must be verified against AI Core fixtures before participant use.
+V5 remains on its original root model/scaler and `[1, 5, 256]` pipeline; these files are protected by build-time SHA-256 checks. V6 bundles `neurotrace_v6_nano.onnx`, `neurotrace_v6_base.onnx`, `neurotrace_v6_pro.onnx`, and `scaler_config_v6.json` under `public/models/v6/`. Its exact input contract is `trajectory: float32 [batch,19,time]` and `device_id: int64 [batch]`, output `logits`, fixed threshold 0.50, and raw sigmoid scores only; shared teacher calibration is not applied to the student tiers. The UI shows the active client tier and does not force class labels or hide score patterns. The graph emits no domain-confidence head. The supplied 15-subject Wacom release-acceptance holdout reported specificity 0.00 at threshold 0.50 for every tier; it is not untouched final validation or clinical validation. Touchscreen PD performance is not established. The scaler channel order and ONNX signatures are checked, but full frontend preprocessing parity (including DWT edge behavior and angle derivation) remains unproven because canonical reference feature fixtures were not supplied. PRO remains server-only metadata after separate opt-in; no server worker is implemented here.
 
-Run `npm test` for feature/scaler/mock-inference checks and `npm run build` for static artifact and V5-preservation checks. `npm run build` is a contract check, not a bundling step.
+Run `npm test` for feature/scaler/mock-inference and tier-selection checks and `npm run build` for all three model hashes, the scaler contract, and V5-preservation checks. `npm run build` is a contract check, not a bundling step.
 
 ## Dataset scope and intended use
 

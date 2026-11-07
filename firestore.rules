@@ -33,13 +33,22 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           'session_id', 'device_uuid', 'device_fingerprint_hash', 'consent_id',
           'session_metadata', 'demographics', 'device_info', 'tasks', 'v6_inference_result',
-          'created_at', 'client_created_at', 'schema_version', 'owner_uid'
+          'v6_server_reevaluation', 'created_at', 'client_created_at', 'schema_version', 'owner_uid'
         ])
         && request.resource.data.session_id == sessionId
         && request.resource.data.schema_version == 'v6.0'
         && request.resource.data.consent_id is string
         && request.resource.data.tasks is list
         && request.resource.data.tasks.size() == 6
+        && request.resource.data.demographics.tremor_status in ['yes', 'no', 'prefer_not_to_say']
+        && request.resource.data.demographics.pro_server_reevaluation_consent is bool
+        && ((!request.resource.data.demographics.pro_server_reevaluation_consent
+              && !request.resource.data.keys().hasAny(['v6_server_reevaluation']))
+          || (request.resource.data.demographics.pro_server_reevaluation_consent
+              && request.resource.data.keys().hasAny(['v6_server_reevaluation'])
+              && request.resource.data.v6_server_reevaluation.requested == true
+              && request.resource.data.v6_server_reevaluation.tier == 'pro'
+              && request.resource.data.v6_server_reevaluation.status == 'pending'))
         && request.resource.data.device_uuid is string
         && request.resource.data.device_fingerprint_hash is string
         && exists(/databases/$(database)/documents/v6_consents/$(request.resource.data.consent_id))

@@ -1,16 +1,18 @@
-# TremorFormer V6 ONNX export
+# NeuroTrace V6 three-tier ONNX family
 
-## Production source synchronization
+This directory contains the accepted `v6-family-1` release bundle from `NEUROTRACE/v6_production/family/`:
 
-Synchronized from Google Drive folder `NEUROTRACE/v6_production/` on 2026-11-01, per the Tech Lead's 50-epoch production designation. The Drive model's modified time is `2026-10-31T15:04:57Z`; the scaler's is `2026-10-31T15:05:16Z`. Their downloaded bytes are identical to the artifacts already in this branch (no model/scaler content delta). The scaler itself does not contain an epoch-count field, so the 50-epoch designation is source-owner provenance, not independently machine-verified here.
+| Tier | Artifact | Precision | Size (bytes) | SHA-256 |
+|---|---|---:|---:|---|
+| NANO | `neurotrace_v6_nano.onnx` | INT8 | 1,370,917 | `38ab0ae21b78085e3bf9c80618719e33f2fb790678a8f97d0ab9f3e198cb8f09` |
+| BASE | `neurotrace_v6_base.onnx` | FP16 | 7,426,918 | `9e89ce556808f5aa9aa3d36ad19989099cecb0f7db44ddf3d2a518e9ac2d6ce8` |
+| PRO | `neurotrace_v6_pro.onnx` | FP32 | 63,112,269 | `1b69d67c13baa772fc020401d687c133634125d868ce01d136bf1db852419e9e` |
+| Shared scaler | `scaler_config_v6.json` | — | 3,754 | `ffaae2b84ef8678ff124a98698fe75af7aadf95469da94a20946513fe74b5491` |
 
-- Model: `neurotrace_v6_tremorformer.onnx`
-- Scaler/feature contract: `scaler_config_v6.json`
-- Contract: `v6-dwt19-v1`
-- ONNX inputs: `trajectory` (`float32 [batch, 19, dynamic_time]`) and `device_id` (`int64 [batch]`)
-- ONNX output: `logits` (raw logit; apply sigmoid)
-- Reference sequence length: 512; minimum engineering length: 64; canonical sample rate: 100 Hz
-- SHA-256: `0593c9c17470f7868f70aa2bc5de6fa51e2dfb27d067bfd15c83648cf28424b4`
-- The scaler marks `clinical_validation` as `NOT_ESTABLISHED`; its small validation-set calibration may overfit.
+All tiers use the exact `v6-dwt19-v1` 19-channel order. ONNX inputs are `trajectory` (`float32 [batch, 19, dynamic_time]`) and `device_id` (`int64 [batch]`); output is the raw `logits` value. The frontend applies per-window population z-score normalization, averages sigmoid outputs as documented in the source, and preserves the fixed threshold 0.50. Shared teacher/isotonic calibration is **not** applied to the student family tiers. The scaler order, model signatures, hashes, and tensor shapes are checked, but full frontend preprocessing parity (including DWT edge behavior and angle derivation) remains unproven without canonical reference feature fixtures.
 
-The ONNX graph emits no domain-confidence output. Do not infer or present a domain-confidence score from the device embedding. The scaler's mean/std values are training diagnostics; V6 applies only its declared per-window population z-score normalization.
+Online automatic client inference selects BASE. Offline, slow-connection/high-latency hints, or an explicit NANO setting selects NANO. Verified model bytes and loaded sessions are cached where browser storage permits. PRO is never loaded by client code; an optional, separate participant opt-in can add a `pending` PRO re-evaluation request to the consented Firestore session. This repository does not implement the server worker or claim that re-evaluation occurred.
+
+## Research limitations
+
+These artifacts are research-only; `clinical_validation` is `NOT_ESTABLISHED`. The supplied 15-subject locked Wacom holdout is a release-acceptance set, not untouched final validation. It reported specificity of 0.00 at threshold 0.50 for all tiers. Touchscreen PD sensitivity is not established; CPU timings are not mobile benchmarks. Do not use the outputs for diagnosis or health decisions. No deployment readiness or clinical validity is implied.

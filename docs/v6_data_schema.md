@@ -31,7 +31,7 @@ The identifier is referenced by `v6_sessions.consent_id`. Security rules bind th
 
 ### `v6_sessions/{session_id}` — one completed, consented protocol
 
-A document is queued locally only after all six tasks have a completed or skipped state and the required feedback form validates. `session_id` is generated on page load. An unfinished local draft resumed after reload is rebased into the new page-load session and notes `resumed_from_session_id` in session metadata.
+A document is queued locally only after all six tasks have a completed or skipped state and the required feedback form validates, including an explicit `tremor_status` response (`yes`, `no`, or `prefer_not_to_say`). A required tremor-status response is saved with demographics. The optional PRO checkbox is separate, explicit consent; the example below shows an opted-in session (`pro_server_reevaluation_consent: true`). Only then does the consented session carry `v6_server_reevaluation`; otherwise that top-level field is omitted. No PRO model bytes are loaded in the browser, and this repository does not implement or claim that a server-side PRO job has run. `session_id` is generated on page load. An unfinished local draft resumed after reload is rebased into the new page-load session and notes `resumed_from_session_id` in session metadata.
 
 ```json
 {
@@ -57,6 +57,8 @@ A document is queued locally only after all six tasks have a completed or skippe
     "biological_sex": "male | female | prefer_not_to_say",
     "handedness": "left | right | ambidextrous",
     "dominant_hand_used": true,
+    "tremor_status": "no",
+    "pro_server_reevaluation_consent": true,
     "tremor_conditions": [],
     "other_tremor_condition": null,
     "caffeine_last_2h": "yes | no | unsure",
@@ -92,16 +94,27 @@ A document is queued locally only after all six tasks have a completed or skippe
     }
   ],
   "v6_inference_result": {
-    "model_version": "<scaler model version>",
+    "model_family": "v6-family-1",
+    "model_version": "v6-gpu-export-1",
+    "model_tier": "base | nano",
+    "model_precision": "FP16 | INT8",
+    "model_sha256_expected": "<tier artifact SHA-256>",
+    "model_selection_reason": "<online_default | offline | low_bandwidth_or_high_latency | explicit mode>",
     "feature_contract": "v6-dwt19-v1",
     "raw_probability": "<mean sigmoid probability across scored tasks>",
-    "calibrated_probability": "<validation-only subject-mean calibration; nullable>",
+    "calibrated_probability": null,
+    "calibration_scope": "not_applied_to_v6_family_tiers",
     "threshold": 0.5,
     "task_results": "<one result per task>",
     "device_domain": "<wacom | touch | mouse | stylus | unknown>",
     "device_id": "<training embedding id>",
     "domain_confidence": null,
     "domain_confidence_reason": "<the ONNX graph does not emit a domain-confidence head>"
+  },
+  "v6_server_reevaluation": {
+    "requested": true,
+    "tier": "pro",
+    "status": "pending"
   },
   "client_created_at": "<client ISO-8601 timestamp>",
   "created_at": "<Firestore serverTimestamp>",

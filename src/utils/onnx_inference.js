@@ -5,20 +5,63 @@ import {
   mapDeviceDomain
 } from './v6_feature_extractor.js';
 
-export const V6_MODEL_URL = '/models/v6/neurotrace_v6_tremorformer.onnx';
+export const V6_MODEL_TIERS = Object.freeze({
+  nano: Object.freeze({
+    file: 'neurotrace_v6_nano.onnx',
+    url: '/models/v6/neurotrace_v6_nano.onnx',
+    sha256: '38ab0ae21b78085e3bf9c80618719e33f2fb790678a8f97d0ab9f3e198cb8f09',
+    precision: 'INT8',
+    bytes: 1370917
+  }),
+  base: Object.freeze({
+    file: 'neurotrace_v6_base.onnx',
+    url: '/models/v6/neurotrace_v6_base.onnx',
+    sha256: '9e89ce556808f5aa9aa3d36ad19989099cecb0f7db44ddf3d2a518e9ac2d6ce8',
+    precision: 'FP16',
+    bytes: 7426918
+  }),
+  pro: Object.freeze({
+    file: 'neurotrace_v6_pro.onnx',
+    url: '/models/v6/neurotrace_v6_pro.onnx',
+    sha256: '1b69d67c13baa772fc020401d687c133634125d868ce01d136bf1db852419e9e',
+    precision: 'FP32',
+    bytes: 63112269
+  })
+});
 export const V6_SCALER_URL = '/models/v6/scaler_config_v6.json';
-const EXPECTED_MODEL_SHA256 = '0593c9c17470f7868f70aa2bc5de6fa51e2dfb27d067bfd15c83648cf28424b4';
-let modelPromise;
+export const V6_FAMILY_VERSION = 'v6-family-1';
+const V6_CACHE_NAME = 'neurotrace-v6-family-1';
+const EXPECTED_PRO_SHA256 = V6_MODEL_TIERS.pro.sha256;
+const modelPromises = new Map();
 let scalerPromise;
+let scalerFetchDurationMs = null;
 
-/** Load and validate the shipped V6 feature/scaler contract. */
+async function cachedResponse(url, fetcher, options = {}) {
+  let cache = null;
+  try { if (globalThis.caches?.open) cache = await globalThis.caches.open(V6_CACHE_NAME); } catch { /* Cache API is optional. */ }
+  if (cache) {
+    try {
+      const cached = await cache.match(url);
+      if (cached) return { response: cached, cache, fromCache: true };
+    } catch { /* Fall through to fetch. */ }
+  }
+  const response = await fetcher(url, options);
+  if (!response.ok) throw new Error(`Could not load ${url} (${response.status}).`);
+  if (cache) {
+    try { await cache.put(url, response.clone()); } catch { /* Storage quota/private mode; use this response. */ }
+  }
+  return { response, cache, fromCache: false };
+}
+
+/** Load and validate the shipped V6 feature/scaler contract, with offline cache support. */
 export async function loadV6Scaler(fetcher = globalThis.fetch) {
   if (!scalerPromise) {
     scalerPromise = (async () => {
-      const response = await fetcher(V6_SCALER_URL, { cache: 'no-store' });
-      if (!response.ok) throw new Error(`Could not load V6 scaler (${response.status}).`);
+      const started = globalThis.performance?.now?.() ?? Date.now();
+      const { response } = await cachedResponse(V6_SCALER_URL, fetcher, { cache: 'force-cache' });
       const config = await response.json();
       validateV6Scaler(config);
+      scalerFetchDurationMs = (globalThis.performance?.now?.() ?? Date.now()) - started;
       return config;
     })().catch(error => {
       scalerPromise = null;
@@ -28,7 +71,7 @@ export async function loadV6Scaler(fetcher = globalThis.fetch) {
   return scalerPromise;
 }
 
-/** Reject scaler files whose declared contract differs from the exported model contract. */
+/** Reject scaler files whose declared contract differs from the exported model family contract. */
 export function validateV6Scaler(config) {
   if (!config || config.feature_contract !== V6_FEATURE_CONTRACT) {
     throw new Error(`Expected feature contract ${V6_FEATURE_CONTRACT}.`);
@@ -57,8 +100,8 @@ export function validateV6Scaler(config) {
     throw new Error('V6 fixed 0.50 threshold contract is unsupported.');
   }
   if (config.parity?.passed !== true || config.parity?.dynamic_sequence !== true
-    || config.parity?.onnx_sha256 !== EXPECTED_MODEL_SHA256) {
-    throw new Error('V6 ONNX parity manifest does not match the expected exported model.');
+    || config.parity?.onnx_sha256 !== EXPECTED_PRO_SHA256) {
+    throw new Error('V6 PRO parity manifest does not match the expected family artifact.');
   }
   if (config.output_semantics !== 'raw_logits') {
     throw new Error('V6 model output semantics are not declared as raw logits.');
@@ -66,33 +109,75 @@ export function validateV6Scaler(config) {
   return config;
 }
 
-/** Load ONNX Runtime Web and the selected-member V6 TremorFormer session. */
-export async function loadV6Model(runtime = globalThis.window?.ort) {
+export function selectV6ModelTier({ mode = 'auto', online = true, connection = null, latencyMs = null } = {}) {
+  if (mode === 'nano') return { tier: 'nano', reason: 'explicit_nano_mode' };
+  if (online === false) return { tier: 'nano', reason: 'offline' };
+  if (mode === 'base') return { tier: 'base', reason: 'explicit_base_mode' };
+  const effectiveType = String(connection?.effectiveType || '').toLowerCase();
+  if (['slow-2g', '2g', '3g'].includes(effectiveType)
+    || (Number.isFinite(Number(connection?.downlink)) && Number(connection.downlink) > 0 && Number(connection.downlink) < 1)
+    || (Number.isFinite(Number(connection?.rtt)) && Number(connection.rtt) >= 800)
+    || (Number.isFinite(Number(latencyMs)) && Number(latencyMs) >= 1200)) {
+    return { tier: 'nano', reason: 'low_bandwidth_or_high_latency' };
+  }
+  return { tier: 'base', reason: 'online_default' };
+}
+
+async function sha256Hex(bytes) {
+  if (!globalThis.crypto?.subtle) throw new Error('Web Crypto is required to verify V6 model assets.');
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('');
+}
+
+async function loadModelBytes(tier, fetcher) {
+  const metadata = V6_MODEL_TIERS[tier];
+  let result;
+  try {
+    result = await cachedResponse(metadata.url, fetcher, { cache: 'force-cache' });
+  } catch (error) {
+    throw new Error(`Could not load V6 ${tier.toUpperCase()} model: ${error.message || 'network error'}`);
+  }
+  let bytes = new Uint8Array(await result.response.arrayBuffer());
+  let actual = await sha256Hex(bytes);
+  if (actual !== metadata.sha256 && result.fromCache && result.cache) {
+    try { await result.cache.delete(metadata.url); } catch { /* Ignore cache cleanup errors. */ }
+    result = await cachedResponse(metadata.url, fetcher, { cache: 'reload' });
+    bytes = new Uint8Array(await result.response.arrayBuffer());
+    actual = await sha256Hex(bytes);
+  }
+  if (actual !== metadata.sha256) throw new Error(`V6 ${tier.toUpperCase()} SHA-256 mismatch; refusing unverified model bytes.`);
+  return bytes;
+}
+
+/** Load an integrity-checked tier session; CacheStorage plus the in-memory session map support repeat/offline use. */
+export async function loadV6Model(runtime = globalThis.window?.ort, tier = 'base', fetcher = globalThis.fetch, bytesLoader = loadModelBytes) {
   if (!runtime?.InferenceSession || !runtime?.Tensor) {
     throw new Error('ONNX Runtime Web is not available in this browser.');
   }
-  if (!modelPromise) {
-    if (runtime.env?.wasm && !runtime.env.wasm.wasmPaths) {
-      runtime.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
-    }
-    modelPromise = runtime.InferenceSession.create(V6_MODEL_URL, {
+  if (!V6_MODEL_TIERS[tier] || tier === 'pro') throw new Error('PRO is server-side only and cannot be loaded by the client.');
+  if (runtime.env?.wasm && !runtime.env.wasm.wasmPaths) {
+    runtime.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
+  }
+  if (!modelPromises.has(tier)) {
+    const promise = bytesLoader(tier, fetcher).then(bytes => runtime.InferenceSession.create(bytes, {
       executionProviders: ['wasm'],
       graphOptimizationLevel: 'all'
-    }).then(session => {
+    })).then(session => {
       const inputs = new Set(session.inputNames || []);
       if (!inputs.has('trajectory') || !inputs.has('device_id')) {
-        throw new Error('V6 ONNX inputs differ from trajectory + device_id contract.');
+        throw new Error(`V6 ${tier.toUpperCase()} ONNX inputs differ from trajectory + device_id contract.`);
       }
       if (!(session.outputNames || []).includes('logits')) {
-        throw new Error('V6 ONNX logits output is unavailable.');
+        throw new Error(`V6 ${tier.toUpperCase()} ONNX logits output is unavailable.`);
       }
-      return { session, runtime };
+      return { session, runtime, tier };
     }).catch(error => {
-      modelPromise = null;
-      throw new Error(`Could not load V6 ONNX model: ${error?.message || 'runtime error'}`);
+      modelPromises.delete(tier);
+      throw new Error(`Could not load V6 ${tier.toUpperCase()} model: ${error?.message || 'runtime error'}`);
     });
+    modelPromises.set(tier, promise);
   }
-  return modelPromise;
+  return modelPromises.get(tier);
 }
 
 /** Population z-score each channel within a window, matching v6-dwt19-v1. */
@@ -146,21 +231,6 @@ async function inferWindow(window, deviceId, runtime, session) {
   return { logit: Number(logits[0]), probability: sigmoid(Number(logits[0])), sequenceLength: timeLength };
 }
 
-function calibratedProbability(probability, calibration) {
-  const x = calibration?.x, y = calibration?.y;
-  if (!Array.isArray(x) || !Array.isArray(y) || x.length < 2 || x.length !== y.length) return null;
-  if (probability <= x[0]) return y[0];
-  if (probability >= x[x.length - 1]) return y[y.length - 1];
-  for (let i = 1; i < x.length; i++) {
-    if (probability <= x[i]) {
-      const span = x[i] - x[i - 1];
-      const fraction = span > 0 ? (probability - x[i - 1]) / span : 0;
-      return y[i - 1] + fraction * (y[i] - y[i - 1]);
-    }
-  }
-  return y[y.length - 1];
-}
-
 function defaultDeviceCutoffs(scaler) {
   return scaler.device_filter_cutoff_hz || { wacom: 15, touch: 10, mouse: 12, stylus: 15, unknown: 10 };
 }
@@ -174,10 +244,26 @@ function defaultDeviceCutoffs(scaler) {
  */
 export async function runV6Assessment(tasks, options = {}) {
   if (!Array.isArray(tasks) || tasks.length !== 6) throw new Error('V6 assessment requires exactly six task records.');
-  const [scaler, model] = await Promise.all([
-    loadV6Scaler(options.fetcher || globalThis.fetch),
-    loadV6Model(options.runtime || globalThis.window?.ort)
-  ]);
+  const scaler = await loadV6Scaler(options.fetcher || globalThis.fetch);
+  const mode = options.tierMode || 'auto';
+  const connection = options.connection || globalThis.navigator?.connection || null;
+  const selection = selectV6ModelTier({
+    mode,
+    online: options.online ?? globalThis.navigator?.onLine ?? true,
+    connection,
+    latencyMs: options.networkLatencyMs ?? scalerFetchDurationMs
+  });
+  let selectedTier = selection.tier;
+  let fallbackReason = null;
+  let model;
+  try {
+    model = await loadV6Model(options.runtime || globalThis.window?.ort, selectedTier, options.modelFetcher || options.fetcher || globalThis.fetch, options.modelBytesLoader || loadModelBytes);
+  } catch (error) {
+    if (mode !== 'auto' || selectedTier !== 'base') throw error;
+    fallbackReason = 'base_load_failed';
+    selectedTier = 'nano';
+    model = await loadV6Model(options.runtime || globalThis.window?.ort, selectedTier, options.modelFetcher || options.fetcher || globalThis.fetch, options.modelBytesLoader || loadModelBytes);
+  }
   const pointerTypes = new Set();
   for (const task of tasks) {
     const observed = task.pointer_types instanceof Set ? task.pointer_types : new Set(task.pointer_types || []);
@@ -218,17 +304,21 @@ export async function runV6Assessment(tasks, options = {}) {
   const rawProbability = scoredTasks.length
     ? scoredTasks.reduce((sum, item) => sum + item.probability, 0) / scoredTasks.length
     : null;
-  const calibrated = rawProbability === null ? null : calibratedProbability(rawProbability, scaler.calibration);
   return {
+    model_family: V6_FAMILY_VERSION,
     model_version: scaler.version,
+    model_tier: selectedTier,
+    model_precision: V6_MODEL_TIERS[selectedTier].precision,
+    model_file: V6_MODEL_TIERS[selectedTier].file,
+    model_sha256_expected: V6_MODEL_TIERS[selectedTier].sha256,
+    model_selection_reason: fallbackReason || selection.reason,
     feature_contract: scaler.feature_contract,
-    model_sha256_expected: scaler.parity?.onnx_sha256 || EXPECTED_MODEL_SHA256,
     output_semantics: 'raw_logits_sigmoid',
     threshold: Number(scaler.classification_threshold ?? 0.5),
     raw_probability: rawProbability,
-    calibrated_probability: calibrated,
-    calibration_scope: scaler.calibration_scope || null,
-    calibration_warning: scaler.calibration?.warning || null,
+    calibrated_probability: null,
+    calibration_scope: 'not_applied_to_v6_family_tiers',
+    calibration_warning: null,
     scored_task_count: scoredTasks.length,
     task_results: results,
     device_self_reported: options.deviceSelfReported || null,

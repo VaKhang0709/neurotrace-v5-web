@@ -8,8 +8,10 @@ import {
   butterworthLowPass
 } from '../src/utils/v6_feature_extractor.js';
 import {
+  loadV6Model,
   normalizeV6Window,
   runV6Assessment,
+  selectV6ModelTier,
   validateV6Scaler
 } from '../src/utils/onnx_inference.js';
 
@@ -35,6 +37,16 @@ test('V6 scaler declares the exact fixed 19-channel order and normalization cont
   assert.equal(scaler.feature_contract, 'v6-dwt19-v1');
   assert.equal(scaler.reference_sequence_length, 512);
   assert.equal(scaler.apply_global_standardization, false);
+});
+
+test('tier resolver uses BASE online and NANO offline or under low-bandwidth hints', () => {
+  assert.deepEqual(selectV6ModelTier({ mode: 'auto', online: true }), { tier: 'base', reason: 'online_default' });
+  assert.deepEqual(selectV6ModelTier({ mode: 'auto', online: false }), { tier: 'nano', reason: 'offline' });
+  assert.deepEqual(selectV6ModelTier({ mode: 'auto', online: true, connection: { effectiveType: '2g' } }), { tier: 'nano', reason: 'low_bandwidth_or_high_latency' });
+  assert.deepEqual(selectV6ModelTier({ mode: 'auto', online: true, connection: { rtt: 900 } }), { tier: 'nano', reason: 'low_bandwidth_or_high_latency' });
+  assert.deepEqual(selectV6ModelTier({ mode: 'auto', online: true, latencyMs: 1300 }), { tier: 'nano', reason: 'low_bandwidth_or_high_latency' });
+  assert.deepEqual(selectV6ModelTier({ mode: 'nano', online: true }), { tier: 'nano', reason: 'explicit_nano_mode' });
+  assert.deepEqual(selectV6ModelTier({ mode: 'base', online: false }), { tier: 'nano', reason: 'offline' });
 });
 
 test('feature windows use dynamic 19-channel tensors and finite per-window normalization', () => {
@@ -88,8 +100,9 @@ test('runner supplies dynamic trajectory plus int64 device id, raw score, task b
     Tensor,
     env: { wasm: {} },
     InferenceSession: {
-      create: async url => {
-        assert.equal(url, '/models/v6/neurotrace_v6_tremorformer.onnx');
+      create: async bytes => {
+        assert.ok(bytes instanceof Uint8Array);
+        assert.equal(bytes[0], 7);
         return {
           inputNames: ['trajectory', 'device_id'],
           outputNames: ['logits'],
@@ -116,8 +129,22 @@ test('runner supplies dynamic trajectory plus int64 device id, raw score, task b
     pointer_types: new Set(['mouse']),
     skipped: index === 5
   }));
-  const result = await runV6Assessment(tasks, { runtime, fetcher });
+  await assert.rejects(() => loadV6Model(runtime, 'pro'), /PRO is server-side only/);
+  const result = await runV6Assessment(tasks, {
+    runtime,
+    fetcher,
+    modelBytesLoader: async tier => {
+      assert.equal(tier, 'base');
+      return Uint8Array.of(7, 8, 9);
+    }
+  });
   assert.equal(result.feature_contract, 'v6-dwt19-v1');
+  assert.equal(result.model_family, 'v6-family-1');
+  assert.equal(result.model_tier, 'base');
+  assert.equal(result.model_precision, 'FP16');
+  assert.equal(result.model_sha256_expected, '9e89ce556808f5aa9aa3d36ad19989099cecb0f7db44ddf3d2a518e9ac2d6ce8');
+  assert.equal(result.calibrated_probability, null);
+  assert.equal('server_re_evaluation' in result, false, 'PRO re-evaluation is session metadata only after consent submission.');
   assert.equal(result.device_id, 2);
   assert.equal(result.scored_task_count, 5);
   assert.equal(result.task_results.length, 6);
@@ -125,4 +152,15 @@ test('runner supplies dynamic trajectory plus int64 device id, raw score, task b
   assert.equal(result.task_results[5].status, 'unavailable');
   assert.equal(result.domain_confidence, null);
   assert.match(result.domain_confidence_reason, /no domain-confidence output/i);
+  const offline = await runV6Assessment(tasks, {
+    runtime,
+    fetcher,
+    online: false,
+    modelBytesLoader: async tier => {
+      assert.equal(tier, 'nano');
+      return Uint8Array.of(7, 8, 9);
+    }
+  });
+  assert.equal(offline.model_tier, 'nano');
+  assert.equal(offline.model_precision, 'INT8');
 });

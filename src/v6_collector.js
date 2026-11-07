@@ -94,6 +94,8 @@ function applyLanguage(language) {
   });
   $('task5Prompt').textContent = getElementText(locale === 'vi' ? 'task5PromptVi' : 'task5PromptEn');
   updateCountryOptions();
+  $('modelTierMode')?.setAttribute('aria-label', getElementText('modelMode'));
+  if (v6InferenceResult) renderV6Assessment(v6InferenceResult);
   updateTaskUi();
   updateBadge();
 }
@@ -467,6 +469,19 @@ function setConditionalFields() {
   document.querySelectorAll('input[name="medications"]').forEach(input => { input.disabled = !isPd; });
 }
 
+function setTremorConditionAvailability() {
+  const status = document.querySelector('input[name="tremor_status"]:checked')?.value || '';
+  const enabled = status === 'yes';
+  document.querySelectorAll('input[name="tremor_conditions"]').forEach(input => {
+    input.disabled = !enabled;
+    if (!enabled) input.checked = false;
+  });
+  const otherChecked = enabled && Boolean(document.querySelector('input[name="tremor_conditions"][value="other"]:checked'));
+  $('otherTremorText').required = otherChecked;
+  $('otherTremorText').disabled = !otherChecked;
+  if (!otherChecked) $('otherTremorText').value = '';
+}
+
 function enforceExclusiveCheckboxes(name, exclusiveValue) {
   document.querySelectorAll(`input[name="${name}"]`).forEach(input => input.addEventListener('change', () => {
     if (input.value === exclusiveValue && input.checked) {
@@ -489,6 +504,7 @@ function validateFeedback() {
   $('healthError').textContent = '';
   $('medicationError').textContent = '';
   $('tremorError').textContent = '';
+  $('tremorStatusError').textContent = '';
   let valid = form.checkValidity();
   if (!extractHealthStatus()) {
     $('healthError').textContent = getElementText('validationHealth');
@@ -498,12 +514,17 @@ function validateFeedback() {
     $('medicationError').textContent = getElementText('validationMedication');
     valid = false;
   }
+  const tremorStatus = document.querySelector('input[name="tremor_status"]:checked')?.value || '';
+  if (!['yes', 'no', 'prefer_not_to_say'].includes(tremorStatus)) {
+    $('tremorStatusError').textContent = getElementText('validationTremorStatus');
+    valid = false;
+  }
   const tremorValues = [...document.querySelectorAll('input[name="tremor_conditions"]:checked')];
-  if (!tremorValues.length) {
+  if (tremorStatus === 'yes' && !tremorValues.length) {
     $('tremorError').textContent = getElementText('validationTremor');
     valid = false;
   }
-  const otherTremor = document.querySelector('input[name="tremor_conditions"][value="other"]:checked');
+  const otherTremor = tremorStatus === 'yes' && document.querySelector('input[name="tremor_conditions"][value="other"]:checked');
   $('otherTremorText').required = Boolean(otherTremor);
   $('otherTremorText').disabled = !otherTremor;
   if (otherTremor && !$('otherTremorText').value.trim()) {
@@ -512,7 +533,9 @@ function validateFeedback() {
   }
   if (!valid) {
     form.reportValidity();
-    ($('healthError').textContent ? document.querySelector('input[name="health_status"]') : form.querySelector(':invalid'))?.focus();
+    ($('healthError').textContent ? document.querySelector('input[name="health_status"]')
+      : $('tremorStatusError').textContent ? document.querySelector('input[name="tremor_status"]')
+      : form.querySelector(':invalid'))?.focus();
   }
   return valid;
 }
@@ -532,6 +555,8 @@ function readFeedbackForm() {
     biological_sex: values.get('biological_sex'),
     handedness: values.get('handedness'),
     dominant_hand_used: values.get('dominant_hand_used') === 'yes',
+    tremor_status: values.get('tremor_status'),
+    pro_server_reevaluation_consent: values.get('pro_server_reevaluation_consent') === 'yes',
     tremor_conditions: tremors,
     other_tremor_condition: values.get('other_tremor') || null,
     caffeine_last_2h: values.get('caffeine_last_2h'),
@@ -670,13 +695,16 @@ function formatModelProbability(value) {
 
 function renderV6Assessment(result, error = null) {
   const raw = $('v6RawProbability');
-  const calibrated = $('v6CalibratedProbability');
+  const tierValue = $('v6TierValue');
   const status = $('v6AssessmentStatus');
   const breakdown = $('v6TaskBreakdown');
   const domain = $('v6DeviceDomain');
   const warning = $('v6CalibrationWarning');
   raw.textContent = formatModelProbability(result?.raw_probability);
-  calibrated.textContent = formatModelProbability(result?.calibrated_probability);
+  tierValue.textContent = result?.model_tier ? `${result.model_tier.toUpperCase()} (${result.model_precision})` : '—';
+  $('activeModelTier').textContent = result?.model_tier
+    ? getElementText('activeTier').replace('{tier}', `${result.model_tier.toUpperCase()} (${result.model_precision})`)
+    : result?.unavailable_reason ? getElementText('activeTierUnavailable') : getElementText('activeTierPending');
   domain.textContent = result?.device_domain ? `${result.device_domain} (device_id ${result.device_id})` : 'unknown';
   $('v6DomainConfidence').textContent = getElementText('v6DomainConfidenceUnavailable');
   status.textContent = error
@@ -698,14 +726,15 @@ function renderV6Assessment(result, error = null) {
   }
 }
 
-function refreshV6Assessment(deviceSelfReported = $('selfDevice')?.value || null) {
+function refreshV6Assessment(deviceSelfReported = $('selfDevice')?.value || null, tierMode = $('modelTierMode')?.value || 'auto') {
   const runId = ++v6AssessmentRunId;
   $('v6AssessmentStatus').textContent = getElementText('v6AssessmentLoading');
   $('v6RawProbability').textContent = '—';
-  $('v6CalibratedProbability').textContent = '—';
+  $('v6TierValue').textContent = '—';
   v6AssessmentPromise = runV6Assessment(taskStates, {
     runtime: globalThis.window?.ort,
-    deviceSelfReported
+    deviceSelfReported,
+    tierMode
   }).then(result => {
     if (runId !== v6AssessmentRunId) return result;
     v6InferenceResult = result;
@@ -717,7 +746,9 @@ function refreshV6Assessment(deviceSelfReported = $('selfDevice')?.value || null
   }).catch(error => {
     if (runId !== v6AssessmentRunId) return null;
     v6InferenceResult = {
-      model_version: 'neurotrace_v6_tremorformer',
+      model_family: 'v6-family-1',
+      model_version: 'v6-gpu-export-1',
+      model_tier: null,
       feature_contract: 'v6-dwt19-v1',
       raw_probability: null,
       calibrated_probability: null,
@@ -816,7 +847,7 @@ function buildSessionPayload(demographics) {
   const tasks = taskStates.map(buildTaskPayload);
   const hasStylus = taskStates.some(task => task.pointer_types.has('pen'));
   const touchCapability = Number(navigator.maxTouchPoints || 0);
-  return {
+  const payload = {
     session_id: sessionId,
     device_uuid: deviceUuid,
     device_fingerprint_hash: deviceFingerprint,
@@ -841,6 +872,10 @@ function buildSessionPayload(demographics) {
     client_created_at: new Date().toISOString(),
     schema_version: 'v6.0'
   };
+  if (consentId && demographics.pro_server_reevaluation_consent === true) {
+    payload.v6_server_reevaluation = { requested: true, tier: 'pro', status: 'pending' };
+  }
+  return payload;
 }
 
 async function updatePendingCount() {
@@ -912,7 +947,15 @@ function createTaskNavAndFormBehavior() {
   document.querySelectorAll('input[name="health_status"]').forEach(input => input.addEventListener('change', setConditionalFields));
   enforceExclusiveCheckboxes('medications', 'prefer_not_to_say');
   enforceExclusiveCheckboxes('tremor_conditions', 'none');
-  $('otherTremorText').disabled = true;
+  document.querySelectorAll('input[name="tremor_status"]').forEach(input => input.addEventListener('change', setTremorConditionAvailability));
+  setTremorConditionAvailability();
+  const savedTierMode = readLocalStorage('neurotrace_v6_model_mode');
+  if (['auto', 'base', 'nano'].includes(savedTierMode)) $('modelTierMode').value = savedTierMode;
+  $('modelTierMode').addEventListener('change', () => {
+    writeLocalStorage('neurotrace_v6_model_mode', $('modelTierMode').value);
+    if (taskStates.every(task => task.completed || task.skipped)) void refreshV6Assessment($('selfDevice').value || '', $('modelTierMode').value);
+    else $('activeModelTier').textContent = $('modelTierMode').value === 'nano' ? getElementText('tierNanoSelected') : $('modelTierMode').value === 'base' ? getElementText('tierBaseSelected') : getElementText('activeTierPending');
+  });
   $('feedbackForm').addEventListener('submit', async event => {
     event.preventDefault();
     if (sessionQueued || !validateFeedback()) return;
@@ -979,8 +1022,8 @@ function createTaskNavAndFormBehavior() {
       $('submissionStatus').textContent = 'Unsent local drafts and queue items were cleared from this browser.';
     } catch (error) { $('submissionStatus').textContent = `Could not clear local data: ${error.message || 'storage error'}`; }
   });
-  window.addEventListener('online', () => { updateBadge(); void syncOutbox(); });
-  window.addEventListener('offline', updateBadge);
+  window.addEventListener('online', () => { updateBadge(); void syncOutbox(); if (taskStates.every(task => task.completed || task.skipped)) void refreshV6Assessment(); });
+  window.addEventListener('offline', () => { updateBadge(); if (taskStates.every(task => task.completed || task.skipped)) void refreshV6Assessment(); });
   window.addEventListener('pagehide', () => { if (pointerActive) scheduleDraftSave(true); });
 }
 
