@@ -100,7 +100,7 @@
   "submit": "Gửi phiên nghiên cứu",
   "submitting": "Đang lưu an toàn…",
   "queueNotice": "Bản gửi được lưu trong hàng đợi IndexedDB cục bộ của trình duyệt này và sẽ thử đồng bộ lại khi dịch vụ đã cấu hình hoạt động. Dữ liệu trình duyệt có thể bị xóa hoặc không khả dụng; không hệ thống chỉ chạy trên trình duyệt nào có thể đảm bảo không mất dữ liệu.",
-  "submissionDone": "Phiên đã được xếp hàng cục bộ. Bạn có thể đóng trang; hệ thống sẽ thử đồng bộ khi có thể.",
+  "submissionDone": "Đã xếp hàng trong trình duyệt này. Firestore chưa xác nhận phiên này.",
   "syncNow": "Đồng bộ dữ liệu đang chờ",
   "pendingCount": "Số mục đang chờ cục bộ: {count}",
   "resetId": "Đặt lại mã định danh của tôi",
@@ -120,7 +120,7 @@
   "confirmReset": "Đặt lại mã thiết bị cục bộ cho các phiên sau? Dữ liệu đang chờ hoặc đã gửi vẫn giữ mã hiện tại.",
   "confirmClear": "Xóa vĩnh viễn mọi bản nháp và bản gửi cục bộ chưa đồng bộ trong trình duyệt này? Không thể xóa dữ liệu đã đồng bộ lên dự án.",
   "savedOffline": "Đã lưu cục bộ; Firebase chưa được cấu hình.",
-  "syncFailed": "Một số mục vẫn đang chờ. Hệ thống sẽ thử lại theo thời gian chờ tăng dần.",
+  "syncFailed": "Chưa nhận được xác nhận từ máy chủ. Mục vẫn nằm trong IndexedDB và sẽ được thử lại.",
   "analyticsDisclaimer": "Firebase Analytics tùy chọn chỉ được khởi tạo sau khi đồng ý và giới hạn ở sự kiện sử dụng ứng dụng chung; không gửi quỹ đạo vẽ hay câu trả lời khảo sát.",
   "highContrast": "Tương phản cao",
   "language": "Ngôn ngữ",
@@ -170,5 +170,13 @@
   "tierNanoSelected": "Đã chọn NANO",
   "tierBaseSelected": "Đã chọn BASE",
   "proServerConsent": "Tùy chọn đánh giá lại bằng PRO trên máy chủ",
-  "proServerConsentDesc": "Tôi đồng ý riêng để phiên nghiên cứu đã được đồng ý tham gia này được đánh dấu cho việc đánh giá lại bằng PRO trên máy chủ trong tương lai. PRO không chạy trong trình duyệt; từ chối không ngăn gửi phiên."
+  "proServerConsentDesc": "Tôi đồng ý riêng để lưu yêu cầu đánh giá lại bằng PRO trên máy chủ trong tương lai. Ứng dụng này chỉ lưu siêu dữ liệu đồng ý/yêu cầu; hiện không có worker PRO trên máy chủ. PRO không chạy trong trình duyệt; từ chối không ngăn gửi phiên.",
+  "submissionQueuedLocal": "Đã xếp hàng trong IndexedDB. Chưa được máy chủ xác nhận.",
+  "submissionLocalOnly": "Chỉ lưu cục bộ: Firebase chưa được cấu hình. Phiên được lưu trong IndexedDB của trình duyệt này; chưa gửi dữ liệu lên máy chủ.",
+  "submissionWaiting": "Đã xếp hàng trong IndexedDB; mạng đang ngoại tuyến. Máy chủ chưa xác nhận.",
+  "submissionConfirmed": "Máy chủ đã xác nhận: Firestore ghi nhận phiên này; thời điểm xác nhận theo giờ cục bộ: {time}.",
+  "v6InsufficientSamples": "Tín hiệu chưa đủ: {count}/{minimum} mẫu 100 Hz đã lấy lại từ {raw} điểm thô. Không bổ sung mẫu.",
+  "v6InsufficientNoPoints": "Tín hiệu chưa đủ: {raw} điểm thô, {invalid} điểm không hợp lệ; không điểm nào có đủ x/y/thời gian. Không bổ sung mẫu.",
+  "v6InsufficientNoResample": "Tín hiệu chưa đủ: {valid} điểm hợp lệ trên {strokes} nét không tạo được mẫu sau lấy lại ({rejected} nét bị loại). Kiểm tra dấu thời gian. Không bổ sung mẫu.",
+  "submissionQueueCleanupPending": "Firestore đã xác nhận ghi dữ liệu, nhưng việc dọn hàng đợi cục bộ vẫn đang chờ."
 }

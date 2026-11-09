@@ -2,6 +2,7 @@ import { preprocessV5Trial, standardizeV5Window } from '../preprocess_v5.js';
 import { consentVersion } from '../config/firebase_config.js';
 import { initializeAnalyticsAfterConsent, isCollectionConfigured, storeConsent, storeSession } from './firebase_client.js';
 import * as localStore from './local_store.js';
+import { synchronizeOutbox } from './utils/outbox_sync.js';
 import { runV6Assessment } from './utils/onnx_inference.js';
 
 const TASK_IDS = ['archimedes_spiral', 'static_spiral_trace', 'straight_line', 'sine_wave', 'free_handwriting', 'rapid_circles'];
@@ -9,7 +10,6 @@ const TASK_TITLE_KEYS = ['task1Title', 'task2Title', 'task3Title', 'task4Title',
 const TASK_PROMPT_KEYS = ['task1Prompt', 'task2Prompt', 'task3Prompt', 'task4Prompt', 'task5PromptEn', 'task6Prompt'];
 const FINGERPRINT_KEYS = ['neurotrace_device_uuid', 'neurotrace_device_fp'];
 const COUNTRY_CODES = 'AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW'.split(' ');
-const MAX_RETRY_MS = 60 * 60 * 1000;
 const TEXT_ENCODER = new TextEncoder();
 
 const $ = id => document.getElementById(id);
@@ -40,6 +40,7 @@ const strokeIndexByPointerId = new Map();
 let renderPending = false;
 let inferencePending = false;
 let sessionQueued = false;
+const serverConfirmedSessionIds = new Set();
 let sessionId = null;
 let sessionStartedAt = new Date().toISOString();
 let consentId = null;
@@ -693,6 +694,26 @@ function formatModelProbability(value) {
   return Number.isFinite(value) ? `${value.toFixed(4)} (${(value * 100).toFixed(2)}%)` : '—';
 }
 
+function describeInsufficientSignal(task) {
+  const diagnostics = task.diagnostics || {};
+  const code = task.insufficient_reason_code || diagnostics.insufficientReasonCode;
+  if (code === 'too_few_resampled_samples') {
+    return getElementText('v6InsufficientSamples')
+      .replace('{count}', String(diagnostics.resampledSampleCount ?? 0))
+      .replace('{minimum}', String(diagnostics.minimumRequiredSamples ?? 64))
+      .replace('{raw}', String(diagnostics.rawPointCount ?? 0));
+  }
+  if (code === 'no_usable_points') {
+    return getElementText('v6InsufficientNoPoints')
+      .replace('{raw}', String(diagnostics.rawPointCount ?? 0))
+      .replace('{invalid}', String(diagnostics.invalidRawPointCount ?? 0));
+  }
+  return getElementText('v6InsufficientNoResample')
+    .replace('{valid}', String(diagnostics.validRawPointCount ?? 0))
+    .replace('{strokes}', String(diagnostics.inputStrokeCount ?? 0))
+    .replace('{rejected}', String(diagnostics.rejectedStrokeCount ?? 0));
+}
+
 function renderV6Assessment(result, error = null) {
   const raw = $('v6RawProbability');
   const tierValue = $('v6TierValue');
@@ -720,7 +741,8 @@ function renderV6Assessment(result, error = null) {
     const title = getElementText(TASK_TITLE_KEYS[index], task.task_id);
     const score = Number.isFinite(task.probability)
       ? formatModelProbability(task.probability)
-      : task.skipped ? getElementText('v6Skipped') : getElementText('v6Insufficient');
+      : task.skipped ? getElementText('v6Skipped')
+        : task.status === 'insufficient_signal' ? describeInsufficientSignal(task) : getElementText('v6Insufficient');
     item.textContent = `${title}: ${score}`;
     breakdown.append(item);
   }
@@ -873,7 +895,7 @@ function buildSessionPayload(demographics) {
     schema_version: 'v6.0'
   };
   if (consentId && demographics.pro_server_reevaluation_consent === true) {
-    payload.v6_server_reevaluation = { requested: true, tier: 'pro', status: 'pending' };
+    payload.v6_server_reevaluation = { requested: true, tier: 'pro', status: 'request_recorded_only' };
   }
   return payload;
 }
@@ -896,44 +918,48 @@ function scheduleRetry(items) {
 
 async function syncOutbox() {
   updateBadge();
-  if (!isCollectionConfigured() || !navigator.onLine || syncRunning) {
+  if (syncRunning) {
+    await updatePendingCount();
+    return;
+  }
+  const configured = isCollectionConfigured();
+  const online = navigator.onLine;
+  if (!configured || !online) {
+    const pending = await localStore.listOutbox().catch(() => []);
+    const currentSessionPending = pending.some(item => item.type === 'session' && item.payload.session_id === sessionId);
+    if (currentSessionPending || sessionQueued) {
+      $('submissionStatus').textContent = !configured
+        ? getElementText('submissionLocalOnly')
+        : getElementText('submissionWaiting');
+    }
     await updatePendingCount();
     return;
   }
   syncRunning = true;
   try {
     const items = await localStore.listOutbox();
-    const failedConsentIds = new Set();
-    for (const item of items) {
-      if (item.next_attempt_at > Date.now()) continue;
-      if (item.type === 'session' && failedConsentIds.has(item.payload.consent_id)) continue;
-      try {
-        if (item.type === 'consent') {
-          await storeConsent(item.payload);
-          try { localStorage.setItem(`neurotrace_synced_consent_${item.payload.consent_id}`, '1'); } catch { /* sync confirmation is best effort */ }
-        } else if (item.type === 'session') {
-          const consentSynced = readLocalStorage(`neurotrace_synced_consent_${item.payload.consent_id}`) === '1';
-          const consentStillQueued = items.some(candidate => candidate.type === 'consent' && candidate.payload.consent_id === item.payload.consent_id);
-          if (!consentSynced && consentStillQueued) {
-            failedConsentIds.add(item.payload.consent_id);
-            continue;
-          }
-          await storeSession(item.payload);
-        }
-        await localStore.removeOutbox(item.id);
-      } catch (error) {
-        if (item.type === 'consent') failedConsentIds.add(item.payload.consent_id);
-        const attempts = (item.attempts || 0) + 1;
-        const delay = Math.min(MAX_RETRY_MS, 1000 * (2 ** Math.min(attempts, 12)));
-        await localStore.updateOutbox({ ...item, attempts, next_attempt_at: Date.now() + delay, last_error: String(error?.message || error).slice(0, 300) });
-        $('submissionStatus').textContent = getElementText('syncFailed');
-      }
-    }
-    const remaining = await localStore.listOutbox();
+    const { remaining, confirmedSessionIds: confirmedThisPass, failedSessionIds } = await synchronizeOutbox({
+      items,
+      localStore,
+      storeConsent,
+      storeSession,
+      isConsentSynced: consentIdForSession => readLocalStorage(`neurotrace_synced_consent_${consentIdForSession}`) === '1',
+      markConsentSynced: consentIdForSession => { writeLocalStorage(`neurotrace_synced_consent_${consentIdForSession}`, '1'); }
+    });
+    for (const confirmedId of confirmedThisPass) serverConfirmedSessionIds.add(confirmedId);
     scheduleRetry(remaining);
-    if (!remaining.length) $('submissionStatus').textContent = 'All queued items have synchronized.';
+    const currentSessionPending = remaining.some(item => item.type === 'session' && item.payload.session_id === sessionId);
+    if (serverConfirmedSessionIds.has(sessionId)) {
+      const time = new Date().toLocaleTimeString(locale === 'vi' ? 'vi-VN' : 'en-US');
+      $('submissionStatus').textContent = getElementText('submissionConfirmed').replace('{time}', time);
+      if (currentSessionPending) $('submissionStatus').textContent += ` ${getElementText('submissionQueueCleanupPending')}`;
+    } else if (failedSessionIds.has(sessionId)) {
+      $('submissionStatus').textContent = getElementText('syncFailed');
+    } else if (currentSessionPending) {
+      $('submissionStatus').textContent = getElementText('submissionQueuedLocal');
+    }
   } catch (error) {
-    $('submissionStatus').textContent = `Synchronization unavailable: ${error.message || 'unknown error'}`;
+    $('submissionStatus').textContent = `${getElementText('syncFailed')} ${error.message || ''}`;
   } finally {
     syncRunning = false;
     await updatePendingCount();
@@ -974,7 +1000,7 @@ function createTaskNavAndFormBehavior() {
       await localStore.deleteDraft(sessionId).catch(() => {});
       $('feedbackForm').querySelectorAll('input, select, textarea').forEach(control => { control.disabled = true; });
       $('backToTasks').disabled = true;
-      $('submissionStatus').textContent = getElementText('submissionDone');
+      $('submissionStatus').textContent = getElementText('submissionQueuedLocal');
       await updatePendingCount();
       await syncOutbox();
       $('protocol').hidden = true;
@@ -1018,6 +1044,7 @@ function createTaskNavAndFormBehavior() {
     if (!confirm(getElementText('confirmClear'))) return;
     try {
       await localStore.clearOutbox();
+      sessionQueued = false;
       await updatePendingCount();
       $('submissionStatus').textContent = 'Unsent local drafts and queue items were cleared from this browser.';
     } catch (error) { $('submissionStatus').textContent = `Could not clear local data: ${error.message || 'storage error'}`; }

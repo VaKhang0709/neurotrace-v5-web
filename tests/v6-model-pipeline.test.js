@@ -70,6 +70,20 @@ test('feature windows use dynamic 19-channel tensors and finite per-window norma
   assert.ok(Number.isFinite(result.diagnostics.ldj));
 });
 
+test('short horizontal strokes report the real resampled-sample deficit without padding', () => {
+  const points = Array.from({ length: 45 }, (_, i) => [20 + i * 4, 120, i * 10000, null, 0, 0, null, 'mouse', 1, 1, 2, 2, true, 0]);
+  const result = extractV6FeatureWindows(points, {
+    sampleRateHz: scaler.canonical_rate_hz,
+    deviceType: 'mouse',
+    deviceCutoffs: scaler.device_filter_cutoff_hz
+  });
+  assert.equal(result.windows.length, 0);
+  assert.equal(result.sampleCount, 45);
+  assert.equal(result.diagnostics.minimumRequiredSamples, 64);
+  assert.equal(result.diagnostics.insufficientReasonCode, 'too_few_resampled_samples');
+  assert.equal(result.diagnostics.resampledSampleCount, 45);
+});
+
 test('native stylus pressure and device embedding mappings are retained without forcing a class label', () => {
   const points = trajectory({ pointerType: 'pen', pressure: i => 0.1 + 0.8 * (0.5 + 0.5 * Math.sin(i / 7)) });
   const result = extractV6FeatureWindows(points, {
@@ -123,9 +137,10 @@ test('runner supplies dynamic trajectory plus int64 device id, raw score, task b
     status: 200,
     json: async () => JSON.parse(await readFile(new URL(`../public${url}`, import.meta.url), 'utf8'))
   });
+  const shortHorizontalStroke = Array.from({ length: 45 }, (_, i) => [20 + i * 4, 120, i * 10000, null, 0, 0, null, 'mouse', 1, 1, 2, 2, true, 0]);
   const tasks = Array.from({ length: 6 }, (_, index) => ({
     task_id: `task_${index + 1}`,
-    trajectory: index === 5 ? [] : trajectory({ points: 100 }),
+    trajectory: index === 5 ? [] : index === 4 ? shortHorizontalStroke : trajectory({ points: 100 }),
     pointer_types: new Set(['mouse']),
     skipped: index === 5
   }));
@@ -146,8 +161,12 @@ test('runner supplies dynamic trajectory plus int64 device id, raw score, task b
   assert.equal(result.calibrated_probability, null);
   assert.equal('server_re_evaluation' in result, false, 'PRO re-evaluation is session metadata only after consent submission.');
   assert.equal(result.device_id, 2);
-  assert.equal(result.scored_task_count, 5);
+  assert.equal(result.scored_task_count, 4);
   assert.equal(result.task_results.length, 6);
+  assert.equal(result.task_results[4].status, 'insufficient_signal');
+  assert.equal(result.task_results[4].insufficient_reason_code, 'too_few_resampled_samples');
+  assert.equal(result.task_results[4].diagnostics.rawPointCount, 45);
+  assert.equal(result.task_results[4].diagnostics.resampledSampleCount, 45);
   assert.ok(Math.abs(result.raw_probability - (1 / (1 + Math.exp(-0.25)))) < 1e-6);
   assert.equal(result.task_results[5].status, 'unavailable');
   assert.equal(result.domain_confidence, null);

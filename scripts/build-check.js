@@ -12,6 +12,7 @@ const requiredFiles = [
   'public/models/v6/scaler_config_v6.json',
   'src/utils/v6_feature_extractor.js',
   'src/utils/onnx_inference.js',
+  'src/utils/outbox_sync.js',
   'src/v6_collector.js',
   'collect.html', 'firestore.rules', 'i18n/en.json', 'i18n/vi.json'
 ];
@@ -44,7 +45,7 @@ for (const [file, expected] of Object.entries(preservedV5)) {
 }
 const sources = [
   'preprocess_v5.js', 'src/firebase_client.js', 'src/local_store.js',
-  'src/v6_collector.js', 'src/utils/v6_feature_extractor.js', 'src/utils/onnx_inference.js'
+  'src/v6_collector.js', 'src/utils/v6_feature_extractor.js', 'src/utils/onnx_inference.js', 'src/utils/outbox_sync.js'
 ];
 for (const file of sources) {
   const result = spawnSync(process.execPath, ['--check', path.join(root, file)], { encoding: 'utf8' });
@@ -60,7 +61,20 @@ if (!/name="tremor_status" value="yes" required/.test(form)
 }
 const en = JSON.parse(await readFile(path.join(root, 'i18n/en.json'), 'utf8'));
 const vi = JSON.parse(await readFile(path.join(root, 'i18n/vi.json'), 'utf8'));
-for (const key of ['modelMode', 'modelAuto', 'modelBase', 'modelNano', 'tremorStatus', 'proServerConsent', 'proServerConsentDesc', 'v6CalibrationPolicy']) {
+for (const key of [
+  'modelMode', 'modelAuto', 'modelBase', 'modelNano', 'tremorStatus', 'proServerConsent',
+  'proServerConsentDesc', 'v6CalibrationPolicy', 'submissionQueuedLocal', 'submissionLocalOnly',
+  'submissionWaiting', 'submissionConfirmed', 'submissionQueueCleanupPending', 'v6InsufficientSamples',
+  'v6InsufficientNoPoints', 'v6InsufficientNoResample'
+]) {
   if (!en[key] || !vi[key]) throw new Error(`Missing V6 family translation: ${key}`);
+}
+const rules = await readFile(path.join(root, 'firestore.rules'), 'utf8');
+const collector = await readFile(path.join(root, 'src/v6_collector.js'), 'utf8');
+if (!rules.includes("status == 'request_recorded_only'") || rules.includes("status == 'pending'")) {
+  throw new Error('PRO consent metadata must not imply a pending server job.');
+}
+if (!collector.includes("status: 'request_recorded_only'") || !en.proServerConsentDesc.includes('no PRO server worker is currently running')) {
+  throw new Error('Client submission must describe PRO as request metadata only; no server worker is running.');
 }
 console.log(`Static family contract passed: BASE ${hashes.base}, NANO ${hashes.nano}, PRO ${hashes.pro}; protected V5 files unchanged.`);

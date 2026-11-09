@@ -298,14 +298,21 @@ export function extractV6FeatureWindows(trajectory, options = {}) {
   const deviceType = options.deviceType || 'unknown';
   const cutoffHz = Number(cutoffs[deviceType] || cutoffs.unknown || 12);
   const grouped = new Map();
+  let validRawPointCount = 0;
+  let invalidRawPointCount = 0;
   trajectory.forEach((raw, index) => {
     const point = readPoint(raw, index);
-    if (point.x === null || point.y === null || point.timeMs === null) return;
+    if (point.x === null || point.y === null || point.timeMs === null) {
+      invalidRawPointCount++;
+      return;
+    }
+    validRawPointCount++;
     const key = point.strokeIndex;
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key).push(point);
   });
-  const blocks = [...grouped.values()].map(points => resampleStroke(points, sampleRateHz)).filter(points => points.length >= 2);
+  const resampledBlocks = [...grouped.values()].map(points => resampleStroke(points, sampleRateHz));
+  const blocks = resampledBlocks.filter(points => points.length >= 2);
   const derived = blocks.map(block => deriveBlock(block, cutoffHz, sampleRateHz));
   const channels = V6_FEATURE_NAMES.map((_, index) => derived.flatMap(block => block.channels[index]));
   const sampleCount = channels[0]?.length || 0;
@@ -316,6 +323,9 @@ export function extractV6FeatureWindows(trajectory, options = {}) {
     windows.push(normalizeWindow(channels, start, length));
   }
   const totalRawPoints = trajectory.length;
+  const insufficientReasonCode = windows.length ? null
+    : sampleCount > 0 ? 'too_few_resampled_samples'
+      : validRawPointCount > 0 ? 'no_resampled_samples' : 'no_usable_points';
   const nativePressurePoints = trajectory.reduce((count, point) => {
     const parsed = readPoint(point, count);
     return count + (parsed.pressure !== null && parsed.pointerType !== 'mouse' ? 1 : 0);
@@ -338,7 +348,14 @@ export function extractV6FeatureWindows(trajectory, options = {}) {
       deviceType,
       cutoffHz,
       rawPointCount: totalRawPoints,
+      validRawPointCount,
+      invalidRawPointCount,
+      inputStrokeCount: grouped.size,
+      resampledStrokeCount: blocks.length,
+      rejectedStrokeCount: grouped.size - blocks.length,
       resampledSampleCount: sampleCount,
+      minimumRequiredSamples: V6_MIN_SEQUENCE_LENGTH,
+      insufficientReasonCode,
       nativePressurePointCount: nativePressurePoints,
       angularVelocityRmsByStroke: angularVelocityRms,
       ldjByStroke: ldj,

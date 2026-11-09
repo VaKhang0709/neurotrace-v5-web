@@ -100,7 +100,7 @@
   "submit": "Submit research session",
   "submitting": "Saving securely…",
   "queueNotice": "Your submission is saved in this browser's IndexedDB queue and will retry when a configured service is online. Browser storage can be cleared or unavailable; no browser-only system can guarantee zero loss.",
-  "submissionDone": "Session queued locally. You can close this page; synchronization will retry when available.",
+  "submissionDone": "Queued in this browser. Firestore has not confirmed this session yet.",
   "syncNow": "Sync pending submissions",
   "pendingCount": "Pending local submissions: {count}",
   "resetId": "Reset my ID",
@@ -120,7 +120,7 @@
   "confirmReset": "Reset the local device identifier for future sessions? Queued or already submitted records will keep their existing identifier.",
   "confirmClear": "Permanently clear all unsent local drafts and submissions from this browser? This cannot delete records already synchronized to the research project.",
   "savedOffline": "Saved locally; Firebase is not configured.",
-  "syncFailed": "Some items remain queued. They will retry with exponential backoff.",
+  "syncFailed": "No server confirmation was received. The item remains in IndexedDB and will retry.",
   "analyticsDisclaimer": "Optional Firebase Analytics is initialized only after consent and is limited to general app-use events; it is not given drawing trajectories or survey answers.",
   "highContrast": "High contrast",
   "language": "Language",
@@ -170,5 +170,13 @@
   "tierNanoSelected": "NANO selected",
   "tierBaseSelected": "BASE selected",
   "proServerConsent": "Optional PRO server re-evaluation",
-  "proServerConsentDesc": "I separately agree to have this consented research session flagged for future server-side PRO re-evaluation. This does not run PRO in the browser; opting out does not block submission."
+  "proServerConsentDesc": "I separately agree to record a request for future server-side PRO re-evaluation. This app only stores that consent/request metadata; no PRO server worker is currently running. PRO does not run in the browser; opting out does not block submission.",
+  "submissionQueuedLocal": "Queued in IndexedDB. Not server-confirmed yet.",
+  "submissionLocalOnly": "Local-only: Firebase is not configured. This session is saved in this browser’s IndexedDB; no server write was attempted.",
+  "submissionWaiting": "Queued in IndexedDB; network is offline. Not server-confirmed.",
+  "submissionConfirmed": "Server-confirmed: Firestore acknowledged this session; local confirmation time: {time}.",
+  "v6InsufficientSamples": "Insufficient signal: {count}/{minimum} required resampled 100 Hz samples from {raw} raw points. No samples were padded.",
+  "v6InsufficientNoPoints": "Insufficient signal: {raw} raw points, {invalid} invalid; none had usable x/y/timestamps. No samples were padded.",
+  "v6InsufficientNoResample": "Insufficient signal: {valid} usable points across {strokes} stroke(s) produced no resampled samples ({rejected} stroke(s) rejected). Check timestamps. No samples were padded.",
+  "submissionQueueCleanupPending": "Firestore acknowledged the write, but local queue cleanup is still pending."
 }

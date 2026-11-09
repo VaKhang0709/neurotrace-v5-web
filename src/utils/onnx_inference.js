@@ -283,7 +283,7 @@ export async function runV6Assessment(tasks, options = {}) {
       deviceCutoffs: defaultDeviceCutoffs(scaler)
     });
     if (!extracted.windows.length) {
-      results.push({ task_id: task.task_id, skipped: false, probability: null, window_probabilities: [], status: 'insufficient_signal', diagnostics: extracted.diagnostics });
+      results.push({ task_id: task.task_id, skipped: false, probability: null, window_probabilities: [], status: 'insufficient_signal', insufficient_reason_code: extracted.diagnostics.insufficientReasonCode, diagnostics: extracted.diagnostics });
       continue;
     }
     const windowOutputs = [];

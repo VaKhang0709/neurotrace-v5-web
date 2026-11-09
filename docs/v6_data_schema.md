@@ -114,7 +114,7 @@ A document is queued locally only after all six tasks have a completed or skippe
   "v6_server_reevaluation": {
     "requested": true,
     "tier": "pro",
-    "status": "pending"
+    "status": "request_recorded_only"
   },
   "client_created_at": "<client ISO-8601 timestamp>",
   "created_at": "<Firestore serverTimestamp>",
